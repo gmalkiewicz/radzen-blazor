@@ -2,6 +2,8 @@
 @using System.Globalization
 @{
     var rowArgs = Grid?.GroupRowAttributes(this);
+    var isFrozenGroupHeader = Grid?.FrozenGroupHeader ?? true;
+    var groupHeaderStyle = isFrozenGroupHeader ? "position: sticky; left: 5px;" : null;
 
     if (Grid != null && rowArgs != null)
     {
@@ -31,7 +33,7 @@
             </a>
         </td>
     }
-    <td colspan="@(TotalColumnCount + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
+    <td style="@groupHeaderStyle" colspan="@(isFrozenGroupHeader ? FrozenColumnCount : TotalColumnCount + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
         <span class="rz-cell-data">
             @if (Grid?.GroupHeaderTemplate != null)
             {
@@ -47,6 +49,14 @@
             }
         </span>
     </td>
+    @if(isFrozenGroupHeader)
+    {
+        <td  colspan="@((TotalColumnCount - FrozenColumnCount) + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
+        <span class="rz-cell-data">
+           
+        </span>
+    </td>
+    }
 </tr>
 @if(Grid != null && rowArgs != null)
 {
@@ -84,6 +94,9 @@
     [Parameter]
     public IList<RadzenDataGridColumn<TItem>> Columns { get; set; } = new List<RadzenDataGridColumn<TItem>>();
 
+    [Parameter]
+    public bool Frozen { get; set; } = true;
+
     GroupResult _groupResult = new GroupResult();
     [Parameter]
     public GroupResult GroupResult
@@ -118,6 +131,17 @@
                   .Where(c => c.GetVisible())
                   .ToList();
             return columnsOfGrid.Sum(c => CountVisibleLeafColumns<TItem>(c));
+        }
+    }
+
+    private int FrozenColumnCount
+    {
+        get
+        {
+            var frozenColumnsOfGrid = Columns
+                  .Where(c => c.GetVisible() && c.Frozen)
+                  .ToList();
+            return frozenColumnsOfGrid.Sum(c => CountVisibleLeafColumns<TItem>(c));
         }
     }
 

@@ -2790,6 +2790,13 @@ namespace Radzen.Blazor
         [Parameter]
         public bool AllowRowSelectOnRowClick { get; set; } = true;
 
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the group header row is frozen.
+        /// </summary>
+        [Parameter]
+        public bool FrozenGroupHeader { get; set; } = false;
+
         /// <summary>
         /// Gets or sets a value indicating whether DataGrid should use alternating row styles.
         /// </summary>
