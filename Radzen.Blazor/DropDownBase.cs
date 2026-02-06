@@ -651,7 +651,11 @@ namespace Radzen
         /// <param name="shouldSelectOnChange">Should select item on item change with keyboard.</param>
         protected virtual async Task HandleKeyPress(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args, bool isFilter = false, bool? shouldSelectOnChange = null)
         {
-            if (Disabled || Data == null || args == null)
+            ArgumentNullException.ThrowIfNull(args);
+
+            var key = args.Code != null ? args.Code : args.Key;
+
+            if (Disabled || Data == null || args == null || key == null)
                 return;
 
             List<object> items = Enumerable.Empty<object>().ToList();
@@ -674,8 +678,6 @@ namespace Radzen
                     items = View != null ? View.Cast<object>().ToList() : Enumerable.Empty<object>().ToList();
                 }
             }
-
-            var key = args.Code != null ? args.Code : args.Key;
 
             if (!args.AltKey && (key == "ArrowDown" || key == "ArrowLeft" || key == "ArrowUp" || key == "ArrowRight"))
             {
@@ -934,6 +936,25 @@ namespace Radzen
             {
                 await DebounceFilter();
             }
+        }
+
+        /// <summary>
+        /// Handles filter input changes (e.g. paste).
+        /// </summary>
+        /// <param name="args">The <see cref="ChangeEventArgs"/> instance containing the event data.</param>
+        protected virtual async Task OnFilterInput(ChangeEventArgs args)
+        {
+            ArgumentNullException.ThrowIfNull(args);
+
+            searchText = $"{args.Value}"; 
+            await SearchTextChanged.InvokeAsync(searchText);
+
+            if (ResetSelectedIndexOnFilter)
+            {
+                selectedIndex = -1;
+            }
+
+            Debounce(DebounceFilter, FilterDelay);
         }
 
         /// <summary>
