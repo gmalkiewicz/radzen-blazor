@@ -218,9 +218,9 @@ namespace Radzen.Blazor
                 lastLoadDataArgs = loadDataArgs;
             }
 
-            var totalItemsCount = LoadData.HasDelegate ? Count : view.Count();
+            var totalItemsCount = (LoadData.HasDelegate ? Count : view.Count()) + itemsToInsert.Count;
 
-            virtualDataItems = (LoadData.HasDelegate ? Data : itemsToInsert.Count > 0 ? itemsToInsert.ToList().Concat(view.Skip(request.StartIndex).Take(top)) : view.Skip(request.StartIndex).Take(top))?.ToList() ?? new List<TItem>();
+            virtualDataItems = (LoadData.HasDelegate ? (itemsToInsert.Count > 0 ? itemsToInsert.ToList().Concat(Data ?? Enumerable.Empty<TItem>()) : Data) : itemsToInsert.Count > 0 ? itemsToInsert.ToList().Concat(view.Skip(request.StartIndex).Take(top)) : view.Skip(request.StartIndex).Take(top))?.ToList() ?? new List<TItem>();
 
             return new Microsoft.AspNetCore.Components.Web.Virtualization.ItemsProviderResult<TItem>(virtualDataItems, totalItemsCount);
         }
@@ -574,6 +574,15 @@ namespace Radzen.Blazor
         }
 
         bool preventKeyDown = true;
+        bool stopKeydownPropagation;
+
+        bool stopGuardKeydownPropagation = true;
+        void OnGuardKeyDown(KeyboardEventArgs args)
+        {
+            var key = args.Code ?? args.Key;
+            stopGuardKeydownPropagation = key != "Escape";
+        }
+
         int focusedIndex = -1;
         int focusedCellIndex;
 
@@ -632,8 +641,9 @@ namespace Radzen.Blazor
             if (key == "ArrowDown" || key == "ArrowUp" || key == "ArrowLeft" || key == "ArrowRight")
             {
                 preventKeyDown = true;
+                stopKeydownPropagation = true;
 
-                if (focusedIndex == 0 && AllowFiltering && FilterMode == FilterMode.Advanced && key == "ArrowDown" && args.AltKey)
+                if (focusedIndex == 0 && AllowFiltering && (FilterMode == FilterMode.Advanced || FilterMode == FilterMode.CheckBoxList) && key == "ArrowDown" && args.AltKey)
                 {
                     var column = ColumnsCollection.Where(c => c.GetVisible()).ElementAtOrDefault(focusedCellIndex);
                     if (column != null && column.headerCell != null && column.Filterable)
@@ -642,7 +652,7 @@ namespace Radzen.Blazor
                     }
                     return;
                 }
-                else if (Template != null && (key == "ArrowLeft" || key == "ArrowRight"))
+                else if ((Template != null || LoadChildData.HasDelegate) && (key == "ArrowLeft" || key == "ArrowRight"))
                 {
                     var pagedViewIndex = focusedIndex - 1;
                     if (FilterRowActive)
@@ -670,12 +680,14 @@ namespace Radzen.Blazor
             else if (IsVirtualizationAllowed() && (key == "PageUp" || key == "PageDown" || key == "Home" || key == "End"))
             {
                 preventKeyDown = true;
+                stopKeydownPropagation = true;
 
                 await FocusRow(key);
             }
             else if (key == "Space" || key == "Enter")
             {
                 preventKeyDown = true;
+                stopKeydownPropagation = true;
 
                 if (focusedIndex == 0)
                 {
@@ -707,6 +719,7 @@ namespace Radzen.Blazor
             else
             {
                 preventKeyDown = false;
+                stopKeydownPropagation = false;
             }
         }
 
@@ -717,7 +730,10 @@ namespace Radzen.Blazor
         /// <param name="column">The column.</param>
         protected virtual void OnFilterKeyPress(EventArgs args, RadzenDataGridColumn<TItem> column)
         {
-            Debounce(() => DebounceFilter(column), FilterDelay);
+            if (FilterAsYouType)
+            {
+                Debounce(() => DebounceFilter(column), FilterDelay);
+            }
         }
 
         async Task DebounceFilter(RadzenDataGridColumn<TItem> column)
@@ -1495,6 +1511,14 @@ namespace Radzen.Blazor
         public int FilterDelay { get; set; } = 500;
 
         /// <summary>
+        /// Gets or sets a value indicating whether filtering is performed as you type. Set to <c>true</c> by default.
+        /// When set to <c>false</c>, the filter is only applied when the user presses Enter or leaves the filter input.
+        /// </summary>
+        /// <value><c>true</c> if filtering as you type is enabled; otherwise, <c>false</c>.</value>
+        [Parameter]
+        public bool FilterAsYouType { get; set; } = true;
+
+        /// <summary>
         /// Gets or sets the filter date format.
         /// </summary>
         /// <value>The filter date format.</value>
@@ -1764,13 +1788,23 @@ namespace Radzen.Blazor
 
         internal async Task StartColumnResize(MouseEventArgs args, int columnIndex)
         {
+            await StartColumnResize(args.ClientX, columnIndex);
+        }
+
+        internal async Task StartColumnResize(double clientX, int columnIndex)
+        {
             if (JSRuntime != null)
             {
-                await JSRuntime.InvokeVoidAsync("Radzen.startColumnResize", getColumnUniqueId(columnIndex), Reference, columnIndex, args.ClientX);
+                await JSRuntime.InvokeVoidAsync("Radzen.startColumnResize", getColumnUniqueId(columnIndex), Reference, columnIndex, clientX);
             }
         }
 
         internal async Task StopColumnResize(MouseEventArgs args, int columnIndex)
+        {
+            await StopColumnResize(columnIndex);
+        }
+
+        internal async Task StopColumnResize(int columnIndex)
         {
             if (JSRuntime != null)
             {
@@ -2584,9 +2618,9 @@ namespace Radzen.Blazor
 
             if (visibleChanged && !firstRender)
             {
-                if (Visible == false)
+                if (Visible && LoadData.HasDelegate)
                 {
-                    Dispose();
+                    await InvokeAsync(Reload);
                 }
             }
 
@@ -3574,6 +3608,20 @@ namespace Radzen.Blazor
             get
             {
                 return $"popup{UniqueID}";
+            }
+        }
+
+        /// <inheritdoc />
+        protected override void OnBecameInvisible()
+        {
+            base.OnBecameInvisible();
+
+            if (IsJSRuntimeAvailable && JSRuntime != null)
+            {
+                foreach (var column in allColumns.ToList().Where(c => c.GetVisible()))
+                {
+                    JSRuntime.InvokeVoid("Radzen.destroyPopup", $"{PopupID}{column.GetFilterProperty()}");
+                }
             }
         }
 

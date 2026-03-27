@@ -1,4 +1,4 @@
-@using Radzen
+﻿@using Radzen
 @using System.Collections
 @using System.Collections.Generic
 @using Microsoft.AspNetCore.Components.Forms
@@ -20,13 +20,13 @@
 
         @if (ValueTemplate != null && selectedItem != null)
         {
-            <span class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation>
+            <span class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                 @ValueTemplate(selectedItem)
             </span>
         }
         else if (Template != null && selectedItem != null)
         {
-            <span class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation>
+            <span class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                 @Template(selectedItem)
             </span>
         }
@@ -44,8 +44,8 @@
                 <div class="rz-dropdown-chips-wrapper">
                     @foreach (var item in itemsToUse)
                     {
-                        <div class="rz-chip">
-                            <span class="rz-chip-text" @onkeydown:stopPropagation>
+                        <div class="rz-chip rz-chip-base rz-variant-filled rz-shade-default">
+                            <span class="rz-chip-text" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                                 @if (ValueTemplate != null)
                                 {
                                     @ValueTemplate(item)
@@ -62,7 +62,7 @@
                             <button tabindex="0"
                                     title="@(RemoveChipTitle + " " + GetItemOrValueFromProperty(item!, TextProperty ?? string.Empty))"
                                     aria-label="@(RemoveChipTitle + " " + GetItemOrValueFromProperty(item!, TextProperty ?? string.Empty))"
-                                    type="button" class="rz-button rz-button-sm rz-button-icon-only rz-base rz-shade-default @(Disabled ?"rz-state-disabled":"")"
+                                    type="button" class="rz-button rz-button-xs rz-variant-text rz-base rz-shade-default rz-button-icon-only @(Disabled ?"rz-state-disabled":"")"
                                     @onclick:preventDefault @onclick:stopPropagation @onclick="() => OnChipRemove(item)">
                                 <RadzenIcon Icon="close" />
                             </button>
@@ -72,7 +72,7 @@
             }
             else
             {
-                <label class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation>
+                <label class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                     @if (itemsToUse.Count < MaxSelectedLabels)
                     {
                         @if (Template == null)
@@ -130,9 +130,16 @@
                     else
                     {
                     <div class="rz-lookup-search">
-                        <input aria-label="@SearchAriaLabel" class="rz-lookup-search-input" id="@SearchID" @ref="@search" tabindex="0" placeholder="@(SearchTextPlaceholder ?? string.Empty)"
-                            @onchange="@OnFilter" @onkeydown="@OnFilterKeyPress" value="@(searchText ?? string.Empty)" style="@(ShowSearch ? "" : "margin-right:0px;")"
-                            @oninput="@OnFilterInput" />
+                        <div class="rz-lookup-search-input-container">
+                            <input aria-label="@SearchAriaLabel" class="rz-lookup-search-input" id="@SearchID" @ref="@search" tabindex="0" placeholder="@(SearchTextPlaceholder ?? string.Empty)"
+                                @onchange="@OnFilter" @onkeydown="@OnFilterKeyPress" value="@(searchText ?? string.Empty)" style="@(ShowSearch ? "" : "margin-right:0px;")"
+                                @oninput="@OnFilterInput" />
+                            @if (!string.IsNullOrEmpty(searchText))
+                            {
+                                <button type="button" tabindex="-1" class="notranslate rz-dropdown-clear-icon rzi rzi-times"
+                                        aria-label="@ClearAriaLabel" @onclick="@ClearSearchText" @onclick:stopPropagation="true"></button>
+                            }
+                        </div>
                         @if (ShowSearch)
                         {
                             <button tabindex="0" class="rz-button rz-button-md rz-button-icon-only rz-primary" type="button"
@@ -203,7 +210,7 @@
 
         @if (AllowClear && (!Multiple && HasValue || Multiple && (selectedItems.Count > 0 || SelectedValue is IEnumerable)))
         {
-            <button type="button" class="notranslate rz-dropdown-clear-icon rzi rzi-times" aria-label="@ClearAriaLabel"
+            <button type="button" tabindex="-1" class="notranslate rz-dropdown-clear-icon rzi rzi-times" aria-label="@ClearAriaLabel"
                     @onclick="@Clear" @onclick:stopPropagation="true"></button>
         }
     </div>

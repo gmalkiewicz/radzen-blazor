@@ -58,12 +58,21 @@ namespace Radzen.Blazor
         [Parameter]
         public bool ClickToOpen { get; set; } = true;
 
+        /// <summary>
+        /// Gets or sets whether nested submenus should fly out horizontally to the side instead of expanding vertically inline.
+        /// When enabled, 2nd level and deeper submenus appear as cascading flyout menus positioned to the right of their parent item.
+        /// </summary>
+        /// <value><c>true</c> to enable flyout submenus; <c>false</c> for default accordion-style nesting. Default is <c>false</c>.</value>
+        [Parameter]
+        public bool Flyout { get; set; }
+
         private bool IsOpen { get; set; }
 
         /// <inheritdoc />
         protected override string GetComponentCssClass() => ClassList.Create("rz-menu")
                                                                      .Add("rz-menu-open", Responsive && IsOpen)
                                                                      .Add("rz-menu-closed", Responsive && !IsOpen)
+                                                                     .Add("rz-menu-flyout", Flyout)
                                                                      .ToString();
 
         void OnToggle()
@@ -91,6 +100,7 @@ namespace Radzen.Blazor
         bool subMenuOpen;
         internal int focusedIndex = -1;
         bool preventKeyPress = true;
+        bool stopKeydownPropagation;
         async Task OnKeyPress(KeyboardEventArgs args)
         {
             var key = args.Code != null ? args.Code : args.Key;
@@ -103,6 +113,7 @@ namespace Radzen.Blazor
             if (key == "ArrowUp" || key == "ArrowDown")
             {
                 preventKeyPress = true;
+                stopKeydownPropagation = true;
 
                 if (subMenuOpen)
                 {
@@ -110,8 +121,10 @@ namespace Radzen.Blazor
                 }
                 else
                 {
-                    if (key == "ArrowDown")
+                    if (key == "ArrowDown" && currentItems.Count > 0)
                     {
+                        focusedIndex = Math.Clamp(focusedIndex, 0, currentItems.Count - 1);
+
                         var item = currentItems[focusedIndex];
 
                         if (item.items.Count > 0)
@@ -127,6 +140,37 @@ namespace Radzen.Blazor
             else if (key == "ArrowLeft" || key == "ArrowRight")
             {
                 preventKeyPress = true;
+                stopKeydownPropagation = true;
+
+                // Flyout mode: ArrowRight opens nested submenu, ArrowLeft closes it
+                if (Flyout && subMenuOpen)
+                {
+                    if (key == "ArrowRight" && focusedIndex >= 0 && focusedIndex < currentItems.Count)
+                    {
+                        var item = currentItems[focusedIndex];
+                        if (item.items.Count > 0)
+                        {
+                            currentItems = item.items.Where(i => i.Visible && !i.Disabled).ToList();
+                            focusedIndex = 0;
+                            subMenuOpen = true;
+                            await item.Open();
+                            return;
+                        }
+                    }
+                    else if (key == "ArrowLeft")
+                    {
+                        var firstItem = currentItems.FirstOrDefault();
+                        var parentItem = firstItem?.ParentItem;
+                        if (parentItem?.ParentItem != null)
+                        {
+                            currentItems = parentItem.ParentItem.items.Where(i => i.Visible && !i.Disabled).ToList();
+                            focusedIndex = currentItems.IndexOf(parentItem);
+                            subMenuOpen = true;
+                            await parentItem.Close();
+                            return;
+                        }
+                    }
+                }
 
                 bool shouldOpenNextMenu = false;
                 if (subMenuOpen)
@@ -163,6 +207,7 @@ namespace Radzen.Blazor
             else if (key == "Space" || key == "Enter")
             {
                 preventKeyPress = true;
+                stopKeydownPropagation = true;
 
                 if (focusedIndex >= 0 && focusedIndex < currentItems.Count)
                 {
@@ -191,6 +236,7 @@ namespace Radzen.Blazor
             else if (key == "Escape")
             {
                 preventKeyPress = true;
+                stopKeydownPropagation = true;
 
                 if (currentItems.Any(i => i.ParentItem != null))
                 {
@@ -208,6 +254,7 @@ namespace Radzen.Blazor
             else
             {
                 preventKeyPress = false;
+                stopKeydownPropagation = false;
             }
         }
 

@@ -20,13 +20,13 @@
 
         @if (ValueTemplate != null && selectedItem != null)
         {
-            <span class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation>
+            <span class="rz-dropdown-label rz-inputtext" style="width:100%;" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                 @ValueTemplate(selectedItem)
             </span>
         }
         else if (Template != null && selectedItem != null)
         {
-            <span class="rz-dropdown-label rz-inputtext" @onkeydown:stopPropagation>
+            <span class="rz-dropdown-label rz-inputtext" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                 @Template(selectedItem)
             </span>
         }
@@ -41,8 +41,8 @@
             <div class="rz-dropdown-chips-wrapper">
                 @foreach (var item in selectedItems)
                 {
-                    <div class="rz-chip">
-                        <span class="rz-chip-text" @onkeydown:stopPropagation>
+                    <div class="rz-chip rz-chip-base rz-variant-filled rz-shade-default">
+                        <span class="rz-chip-text" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                             @if(ValueTemplate != null)
                             {
                                 @ValueTemplate(item)
@@ -59,7 +59,7 @@
                         <button tabindex="0"
                                 title="@(RemoveChipTitle + " " + GetItemOrValueFromProperty(item, TextProperty ?? ""))"
                                 aria-label="@(RemoveChipTitle + " " + GetItemOrValueFromProperty(item, TextProperty ?? ""))"
-                                type=button class="rz-button rz-button-sm rz-button-icon-only rz-base rz-shade-default @(Disabled ?"rz-state-disabled":"")"
+                                type=button class="rz-button rz-button-xs rz-variant-text rz-base rz-shade-default rz-button-icon-only @(Disabled ?"rz-state-disabled":"")"
                                 @onclick:preventDefault @onclick:stopPropagation @onclick="() => OnChipRemove(item)">
                             <RadzenIcon Icon="close" />
                         </button>
@@ -69,7 +69,7 @@
         }
         else if (selectedItems.Count > 0)
         {
-            <span class="rz-dropdown-label rz-inputtext" @onkeydown:stopPropagation>
+            <span class="rz-dropdown-label rz-inputtext" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
                 @if (selectedItems.Count < MaxSelectedLabels)
                 {
                     @if (Template == null && ValueTemplate == null)
@@ -129,7 +129,7 @@
                 {
                     <div class="rz-dropdown-filter-container">
                         <input aria-label="@SearchAriaLabel" id="@SearchID" @ref="@search" tabindex="@(Disabled ? "-1" : $"{TabIndex}")" placeholder="@(FilterPlaceholder ?? string.Empty)" class="rz-dropdown-filter rz-inputtext" autocomplete="@FilterAutoCompleteType" aria-autocomplete="none" type="text"
-                               @onchange="@OnFilter" @onkeydown="@OnFilterKeyPress" value="@(searchText ?? string.Empty)"
+                               @onchange="@OnFilter" @onkeydown="@OnFilterKeyPress" @onkeydown:preventDefault="@preventFilterKeydown" value="@(searchText ?? string.Empty)"
                                @oninput="@OnFilterInput" />
                         <span class="notranslate rz-dropdown-filter-icon rzi rzi-search"></span>
                     </div>
@@ -169,14 +169,17 @@
                             <input id="@SearchID" tabindex="@(Disabled ? "-1" : $"{TabIndex}")" class="rz-inputtext" role="textbox" type="text"
                                    onclick="Radzen.preventDefaultAndStopPropagation(event)" aria-label="@SearchAriaLabel"
                                    @ref="@search" @oninput="@OnFilterInput"
-                                   @onchange="@OnFilter" @onkeydown="@OnFilterKeyPress" value="@(searchText ?? string.Empty)" autocomplete="@FilterAutoCompleteType" />
+                                   @onchange="@OnFilter" @onkeydown="@OnFilterKeyPress" @onkeydown:preventDefault="@preventFilterKeydown" value="@(searchText ?? string.Empty)" autocomplete="@FilterAutoCompleteType" />
                             <span class="notranslate rz-multiselect-filter-icon rzi rzi-search"></span>
                         </div>
                     }
-                    <button type="button" id="@(GetId() + "clear")" class="rz-multiselect-close" aria-label="@ClearAriaLabel"
-                            @onclick="@ClearAll" @onclick:stopPropagation="true">
-                        <span class="notranslate rzi rzi-times"></span>
-                    </button>
+                    @if (AllowClear && !ReadOnly && (!Multiple && HasValue || Multiple && selectedItems.Count > 0))
+                    {
+                        <button type="button" tabindex="-1" id="@(GetId() + "clear")" class="rz-multiselect-close" aria-label="@ClearAriaLabel"
+                                @onclick="@ClearAll" @onclick:stopPropagation="true">
+                            <span class="notranslate rzi rzi-times"></span>
+                        </button>
+                    }
                 </div>
                 }
             }
@@ -201,9 +204,9 @@
                 @FooterTemplate
             }
         </div>
-        @if (AllowClear && (!Multiple && HasValue || Multiple && selectedItems.Count > 0))
+        @if (AllowClear && !ReadOnly && (!Multiple && HasValue || Multiple && selectedItems.Count > 0))
         {
-            <button type="button" class="notranslate rz-dropdown-clear-icon rzi rzi-times" aria-label="@ClearAriaLabel"
+            <button type="button" tabindex="-1" class="notranslate rz-dropdown-clear-icon rzi rzi-times" aria-label="@ClearAriaLabel"
                     @onclick="@ClearAll" @onclick:stopPropagation="true"></button>
         }
     </div>

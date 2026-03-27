@@ -18,7 +18,7 @@
     </div>
     <div class="rz-view-content">
         <Hours Start=@StartTime End=@EndTime TimeFormat=@TimeFormat MinutesPerSlot=@MinutesPerSlot />
-        <div @ref=view class="rz-week-view-content" tabindex="0" @onkeydown="@(args => OnKeyPress(args))" @onkeydown:preventDefault="@preventKeyPress" @onkeydown:stopPropagation
+        <div @ref=view class="rz-week-view-content" tabindex="0" @onkeydown="@(args => OnKeyPress(args))" @onkeydown:preventDefault="@preventKeyPress" @onkeydown:stopPropagation="stopKeydownPropagation"
              @onfocus=@this.AsNonRenderingEventHandler(OnFocus)>
         @for (var day = StartDate; day < EndDate; day = day.AddDays(1))
         {
@@ -123,6 +123,7 @@
     int currentAppointment = -1;
     IEnumerable<AppointmentData> currentAppointments = Enumerable.Empty<AppointmentData>();
     bool preventKeyPress;
+    bool stopKeydownPropagation;
 
     async Task OnKeyPress(KeyboardEventArgs args)
     {
@@ -134,7 +135,8 @@
 
         if (arrow && !currentAppointments.Any())
         {
-            CurrentDate = CurrentDate.AddDays(leftup ? -1 : 1);
+            var days = leftright ? 1 : 7;
+            CurrentDate = CurrentDate.AddDays(leftup ? -days : days);
             currentAppointments = AppointmentsInSlot(CurrentDate, CurrentDate.AddDays(1));
 
             if(CurrentDate < StartDate)
@@ -148,6 +150,7 @@
             }
 
             preventKeyPress = true;
+            stopKeydownPropagation = true;
         }
         else if (arrow && currentAppointments.Any())
         {
@@ -172,6 +175,7 @@
             }
 
             preventKeyPress = true;
+            stopKeydownPropagation = true;
         }
         else if (key == "Enter")
         {
@@ -179,6 +183,7 @@
             await view.FocusAsync();
 
             preventKeyPress = true;
+            stopKeydownPropagation = true;
         }
         else if (key == "Space")
         {
@@ -193,10 +198,12 @@
             }
 
             preventKeyPress = true;
+            stopKeydownPropagation = true;
         }
         else
         {
             preventKeyPress = false;
+            stopKeydownPropagation = false;
         }
     }
 }

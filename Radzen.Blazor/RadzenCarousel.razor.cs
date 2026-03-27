@@ -123,7 +123,7 @@ namespace Radzen.Blazor
                 await Change.InvokeAsync(selectedIndex);
                 if (JSRuntime != null)
                 {
-                    await JSRuntime.InvokeVoidAsync("Radzen.scrollCarouselItem", items[selectedIndex].element);
+                    await JSRuntime.InvokeVoidAsync("Radzen.scrollCarouselItem", items[selectedIndex].element, AnimationDuration.HasValue ? (object)AnimationDuration.Value : null);
                 }
                 StateHasChanged();
             }
@@ -142,7 +142,8 @@ namespace Radzen.Blazor
         /// </summary>
         public void Start()
         {
-            timer?.Change(TimeSpan.FromMilliseconds(Interval), TimeSpan.FromMilliseconds(Interval));
+            var totalInterval = TimeSpan.FromMilliseconds(Interval + (AnimationDuration ?? 0));
+            timer?.Change(totalInterval, totalInterval);
         }
 
         /// <summary>
@@ -214,7 +215,7 @@ namespace Radzen.Blazor
             {
                 if (JSRuntime != null)
                 {
-                    await JSRuntime.InvokeVoidAsync("Radzen.scrollCarouselItem", items[selectedIndex].element);
+                    await JSRuntime.InvokeVoidAsync("Radzen.scrollCarouselItem", items[selectedIndex].element, AnimationDuration.HasValue ? (object)AnimationDuration.Value : null);
                 }
             }
         }
@@ -231,6 +232,15 @@ namespace Radzen.Blazor
         /// </summary>
         [Parameter]
         public double Interval { get; set; } = 4000;
+
+        /// <summary>
+        /// Gets or sets the slide transition animation duration in milliseconds.
+        /// When <c>null</c> (default), the browser's native smooth scroll is used.
+        /// Use <c>0</c> for instant transitions with no animation, or a positive value for a custom duration.
+        /// </summary>
+        /// <value>The animation duration in milliseconds, or <c>null</c> for native smooth scroll.</value>
+        [Parameter]
+        public double? AnimationDuration { get; set; }
 
         /// <summary>
         /// Gets or sets the pager position. Set to <c>PagerPosition.Bottom</c> by default.
@@ -259,6 +269,13 @@ namespace Radzen.Blazor
         /// <value><c>true</c> if previous/next navigation is allowed; otherwise, <c>false</c>.</value>
         [Parameter]
         public bool AllowNavigation { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the user can scroll or swipe through carousel items. Set to <c>true</c> by default.
+        /// </summary>
+        /// <value><c>true</c> if scrolling/swiping is allowed; otherwise, <c>false</c>.</value>
+        [Parameter]
+        public bool AllowScroll { get; set; } = true;
 
         /// <summary>
         /// Gets or sets the buttons style
@@ -318,6 +335,33 @@ namespace Radzen.Blazor
 
         System.Threading.Timer? timer;
 
+        ElementReference itemsElement;
+        IJSObjectReference? scrollDisposable;
+
+        /// <summary>
+        /// Called from JavaScript when the user scrolls the carousel items container.
+        /// </summary>
+        /// <param name="index">The index of the currently visible item.</param>
+        [JSInvokable("RadzenCarousel.OnScroll")]
+        public async Task OnScroll(int index)
+        {
+            if (!AllowScroll) return;
+
+            if (index >= 0 && index <= items.Count - 1 && selectedIndex != index)
+            {
+                selectedIndex = index;
+                await SelectedIndexChanged.InvokeAsync(selectedIndex);
+                await Change.InvokeAsync(selectedIndex);
+
+                if (Auto)
+                {
+                    await Reset();
+                }
+
+                StateHasChanged();
+            }
+        }
+
         /// <inheritdoc />
         protected override async Task OnAfterRenderAsync(bool firstRender)
         {
@@ -325,9 +369,15 @@ namespace Radzen.Blazor
 
             if (firstRender)
             {
-                var ts = TimeSpan.FromMilliseconds(Interval);
-                timer = new System.Threading.Timer(state => InvokeAsync(Next), 
+                var ts = TimeSpan.FromMilliseconds(Interval + (AnimationDuration ?? 0));
+                timer = new System.Threading.Timer(state => InvokeAsync(Next),
                     null, Auto ? ts : Timeout.InfiniteTimeSpan, ts);
+
+                if (JSRuntime != null)
+                {
+                    scrollDisposable = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                        "Radzen.createCarousel", itemsElement, Reference);
+                }
             }
         }
 
@@ -342,6 +392,13 @@ namespace Radzen.Blazor
                 timer = null;
             }
 
+            if (scrollDisposable != null)
+            {
+                try { scrollDisposable.InvokeVoidAsync("dispose"); } catch { }
+                try { scrollDisposable.DisposeAsync(); } catch { }
+                scrollDisposable = null;
+            }
+
             GC.SuppressFinalize(this);
         }
 
@@ -350,6 +407,8 @@ namespace Radzen.Blazor
 
         void OnTouchStart(TouchEventArgs args)
         {
+            if (!AllowScroll) return;
+
             x = args.Touches[0].ClientX;
             y = args.Touches[0].ClientY;
         }

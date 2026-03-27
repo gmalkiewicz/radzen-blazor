@@ -342,6 +342,7 @@ Radzen.DocFX/api/*.yml
 !Radzen.DocFX/api/index.md
 Radzen.DocFX/api/.manifest
 Radzen.Blazor.min.js
+Radzen.Blazor.Api/Generated/
 /.claude
 /SANKEY_PATTERN_COMPARISON.md
 *.md
@@ -349,3 +350,5 @@ Radzen.Blazor.min.js
 /.gitignore
 RadzenBlazorDemos/wwwroot/demos
 llms.txt
+RadzenBlazorDemos.Host/wwwroot/sitemap.xml
+RadzenBlazorDemos.Host/wwwroot/robots.txt

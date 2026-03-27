@@ -10,7 +10,7 @@
          @onclick="@Select" @onkeydown="OnKeyDown">
         @if (ChildContent != null || HasChildren)
         {
-            <span class=@IconClass role="button" tabindex="0" aria-label="@Text" @onclick="@Toggle" @onclick:stopPropagation @onkeydown="OnToggleKeyDown"></span>
+            <span class=@IconClass role="button" tabindex="-1" aria-label="@Text" @onclick="@Toggle" @onclick:stopPropagation @onkeydown="OnToggleKeyDown"></span>
         }
         @if(Tree != null && Tree.AllowCheckBoxes)
         {
@@ -18,7 +18,7 @@
         }
         @if (Template != null)
         {
-            <div class=@LabelClass @onkeydown:stopPropagation>@Template(this)</div>
+            <div class=@LabelClass @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">@Template(this)</div>
         } else
         {
             <label for="@(GetHashCode())" class=@LabelClass>@Text</label>
@@ -28,7 +28,7 @@
     {
     <CascadingValue Value=this>
     <Expander Expanded=@clientExpanded>
-    <ul class="rz-treenode-children" @onkeydown:stopPropagation>
+    <ul class="rz-treenode-children" @onkeydown:stopPropagation="stopKeydownPropagation" @onkeydown="OnGuardKeyDown">
         @ChildContent
     </ul>
     </Expander>
