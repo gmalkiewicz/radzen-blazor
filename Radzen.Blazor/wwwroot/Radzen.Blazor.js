@@ -21,9 +21,117 @@ var rejectCallbacks = [];
 var radzenRecognition;
 
 window.Radzen = {
+  keyboard: {
+    enabled: false,
+    disableCtrl: false,
+    disableShift: false,
+    preventDefault: true,
+    stopPropagation: true,
+    stopImmediatePropagation: true,
+    allowAttribute: 'data-rz-allow-modifier-keys'
+  },
     isRTL: function (el) {
         return el && getComputedStyle(el).direction == 'rtl';
     },
+  configureKeyboard: function (options) {
+    options = options || {};
+
+    for (var key in options) {
+      if (Object.prototype.hasOwnProperty.call(options, key)) {
+        Radzen.keyboard[key] = options[key];
+      }
+    }
+
+    Radzen.ensureKeyboardInterception();
+    return Radzen.keyboard;
+  },
+  ensureKeyboardInterception: function () {
+    if (Radzen._keyboardInterceptionRegistered || !document || !document.addEventListener) {
+      return;
+    }
+
+    Radzen._keyboardInterceptor = function (e) {
+      if (!Radzen.shouldBlockModifierKeyEvent(e)) {
+        return true;
+      }
+
+      if (Radzen.keyboard.preventDefault && !Radzen.shouldSkipKeyboardPreventDefault(e)) {
+        e.preventDefault();
+      }
+      if (Radzen.keyboard.stopPropagation) {
+        e.stopPropagation();
+      }
+      if (Radzen.keyboard.stopImmediatePropagation && e.stopImmediatePropagation) {
+        e.stopImmediatePropagation();
+      }
+
+      return false;
+    };
+
+    document.addEventListener('keydown', Radzen._keyboardInterceptor, true);
+    document.addEventListener('keyup', Radzen._keyboardInterceptor, true);
+    Radzen._keyboardInterceptionRegistered = true;
+  },
+  shouldSkipKeyboardPreventDefault: function (e) {
+    var target = e && (e.target || document.activeElement);
+    if (!target) {
+      return false;
+    }
+
+    if (target.isContentEditable) {
+      return true;
+    }
+
+    var tagName = target.tagName ? target.tagName.toLowerCase() : '';
+    return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+  },
+  shouldBlockModifierKeyEvent: function (e) {
+    if (!e || !Radzen.keyboard || !Radzen.keyboard.enabled) {
+      return false;
+    }
+
+    var key = e.key || e.code || '';
+    var ctrlActive = !!e.ctrlKey || key === 'Control' || key === 'ControlLeft' || key === 'ControlRight';
+    var shiftActive = !!e.shiftKey || key === 'Shift' || key === 'ShiftLeft' || key === 'ShiftRight';
+
+    if ((!Radzen.keyboard.disableCtrl || !ctrlActive) && (!Radzen.keyboard.disableShift || !shiftActive)) {
+      return false;
+    }
+
+    var target = e.target || document.activeElement;
+    var host = Radzen.findKeyboardHost(target);
+    if (!host) {
+      return false;
+    }
+
+    var allowAttribute = Radzen.keyboard.allowAttribute;
+    if (allowAttribute && target && target.closest && target.closest('[' + allowAttribute + '="true"]')) {
+      return false;
+    }
+
+    return true;
+  },
+  findKeyboardHost: function (target) {
+    var element = target;
+
+    while (element && element !== document && element !== document.documentElement) {
+      if (element.getAttribute && element.getAttribute('data-rz-allow-modifier-keys') === 'true') {
+        return null;
+      }
+
+      if (element.classList) {
+        for (var i = 0; i < element.classList.length; i++) {
+          if (element.classList[i].indexOf('rz-') === 0) {
+            return element;
+          }
+        }
+      }
+
+      element = element.parentElement || element.parentNode;
+    }
+
+    return null;
+  },
     throttle: function (callback, delay) {
         var timeout = null;
         return function () {
@@ -3704,3 +3812,5 @@ Radzen.chatScrollToBottom = function(container) {
   if (!container) return;
   container.scrollTop = container.scrollHeight;
 };
+
+Radzen.ensureKeyboardInterception();
