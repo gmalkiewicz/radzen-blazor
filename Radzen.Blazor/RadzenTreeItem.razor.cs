@@ -96,6 +96,15 @@ namespace Radzen.Blazor
         [CascadingParameter]
         public RadzenTree? Tree { get; set; }
 
+        /// <inheritdoc />
+        protected override void OnAfterRender(bool firstRender)
+        {
+            // An item can render without the tree, so it must end the shared memo's lifetime.
+            Tree?.DiscardCheckedValuesMemo();
+
+            base.OnAfterRender(firstRender);
+        }
+
         /// <summary>
         /// The RadzenTreeItem which contains this item.
         /// </summary>
@@ -127,6 +136,39 @@ namespace Radzen.Blazor
         public string? LabelCssClass { get; set; }
 
         internal List<RadzenTreeItem> items = new List<RadzenTreeItem>();
+
+        internal string ElementId => $"treeitem-{GetHashCode()}";
+
+        internal int Level
+        {
+            get
+            {
+                var level = 1;
+                var parent = ParentItem;
+
+                while (parent != null)
+                {
+                    level++;
+                    parent = parent.ParentItem;
+                }
+
+                return level;
+            }
+        }
+
+        List<RadzenTreeItem> Siblings => ParentItem?.items ?? Tree?.items ?? new List<RadzenTreeItem>();
+
+        internal int SetSize => Siblings.Count;
+
+        internal int PosInSet
+        {
+            get
+            {
+                var index = Siblings.IndexOf(this);
+
+                return index >= 0 ? index + 1 : 1;
+            }
+        }
 
         /// <summary>
         /// Toggles the checked state of the tree node in response to a mouse event, if checkboxes are enabled and the
@@ -178,6 +220,11 @@ namespace Radzen.Blazor
         }
 
         bool clientExpanded;
+
+        internal bool IsExpanded => clientExpanded;
+
+        internal bool IsExpandable => ChildContent != null || HasChildren;
+
         async Task Toggle()
         {
             if (expanded && Tree?.SingleExpand != true)
@@ -274,24 +321,6 @@ namespace Radzen.Blazor
         {
             selected = true;
             Tree?.SelectItem(this);
-        }
-
-        void OnKeyDown(KeyboardEventArgs args)
-        {
-            var key = args.Code != null ? args.Code : args.Key;
-            if (key == "Enter" || key == "Space")
-            {
-                Select();
-            }
-        }
-
-        async Task OnToggleKeyDown(KeyboardEventArgs args)
-        {
-            var key = args.Code != null ? args.Code : args.Key;
-            if (key == "Enter" || key == "Space")
-            {
-                await Toggle();
-            }
         }
 
         internal void Unselect()
@@ -425,16 +454,37 @@ namespace Radzen.Blazor
             }
         }
 
+        internal async Task OnCheckBoxChange(bool? value)
+        {
+            await CheckedChange(!(IsChecked() ?? true));
+        }
+
         internal bool? IsChecked()
         {
-            var checkedValues = GetCheckedValues();
-
-            if (Tree?.AllowCheckParents == true && HasChildren && IsOneChildUnchecked() && IsOneChildChecked())
+            if (Tree?.AllowCheckParents == true && HasChildren)
             {
-                return null;
+                // Determine the mixed state in one subtree walk.
+                var anyChecked = false;
+                var anyUnchecked = false;
+                foreach (var childValue in GetAllChildValues())
+                {
+                    if (Tree.IsValueChecked(childValue))
+                    {
+                        anyChecked = true;
+                    }
+                    else
+                    {
+                        anyUnchecked = true;
+                    }
+
+                    if (anyChecked && anyUnchecked)
+                    {
+                        return null;
+                    }
+                }
             }
 
-            return checkedValues.Contains(Value);
+            return Tree?.IsValueChecked(Value) ?? false;
         }
 
         IEnumerable<object?> GetCheckedValues()
@@ -470,12 +520,6 @@ namespace Radzen.Blazor
         {
             var checkedValues = GetCheckedValues();
             return GetAllChildValues().Any(i => !checkedValues.Contains(i));
-        }
-
-        bool IsOneChildChecked()
-        {
-            var checkedValues = GetCheckedValues();
-            return GetAllChildValues().Any(i => checkedValues.Contains(i));
         }
 
         async Task UpdateCheckedValuesWithParents(bool? value)
@@ -517,13 +561,6 @@ namespace Radzen.Blazor
             }
 
             return false;
-        }
-
-        bool stopKeydownPropagation = true;
-        void OnGuardKeyDown(KeyboardEventArgs args)
-        {
-            var key = args.Code ?? args.Key;
-            stopKeydownPropagation = key != "Escape";
         }
 
         async Task OnContextMenu(MouseEventArgs args)

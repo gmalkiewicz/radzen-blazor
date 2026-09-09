@@ -19,6 +19,12 @@ namespace Radzen.Blazor
                 return String.Empty;
             }
 
+            // Normalize negative zero to zero
+            if (value is double d && d == 0)
+            {
+                value = 0.0;
+            }
+
             if (String.IsNullOrEmpty(format))
             {
                 return value.ToString() ?? String.Empty;
@@ -59,6 +65,16 @@ namespace Radzen.Blazor
 
         public override (double Start, double End, double Step) Ticks(int distance)
         {
+            // An unmeasured scale keeps the infinite ScaleRange defaults, which NiceNumber()
+            // below cannot round. Substitute a finite domain first, as the other scales do.
+            if (!double.IsFinite(Input.Start) || !double.IsFinite(Input.End))
+            {
+                Input.Start = 0;
+                Input.End = 2;
+                Step = 1;
+                Round = false;
+            }
+
             var ticks = CalculateTickCount(distance);
             var start = Input.Start;
             var end = Input.End;
@@ -107,14 +123,7 @@ namespace Radzen.Blazor
                 end = Math.Ceiling(end / step) * step;
             }
 
-            if (!double.IsFinite(Input.Start) || !double.IsFinite(Input.End))
-            {
-                Input.Start = start = 0;
-                Input.End = end = 2;
-                Step = step = 1;
-                Round = false;
-            }
-
+            // The rounding above can still overflow a finite domain.
             if (!double.IsFinite(start) || !double.IsFinite(end))
             {
                 Input.Start = start = 0;

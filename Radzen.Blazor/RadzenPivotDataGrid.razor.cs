@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Dynamic.Core;
 using System.Text.Json;
@@ -39,6 +40,17 @@ namespace Radzen.Blazor
     /// </code>
     /// </example>
     [CascadingTypeParameter(nameof(TItem))]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2046, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2055, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2060, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2067, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2072, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2075, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2080, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2087, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2091, Justification = TrimMessages.DataTypePreserved)]
     public partial class RadzenPivotDataGrid<TItem> : PagedDataBoundComponent<TItem>
     {
         private class RowHeaderCell
@@ -88,11 +100,22 @@ namespace Radzen.Blazor
         [Parameter]
         public bool IsLoading { get; set; }
 
+        private string? emptyText;
+
         /// <summary>
         /// Gets or sets the empty text shown when Data is empty collection.
         /// </summary>
         [Parameter]
-        public string EmptyText { get; set; } = "No records to display.";
+        public string EmptyText { get => emptyText ?? Localize(nameof(RadzenStrings.PivotDataGrid_EmptyText)); set => emptyText = value; }
+
+        private string? othersText;
+
+        /// <summary>
+        /// Gets or sets the default label of the group that combines the remaining items when the <c>MaxGroups</c> limit of a pivot row or column is exceeded.
+        /// Used when <see cref="RadzenPivotRow{TItem}.OthersLabel"/> or <see cref="RadzenPivotColumn{TItem}.OthersLabel"/> is not set.
+        /// </summary>
+        [Parameter]
+        public string OthersText { get => othersText ?? Localize(nameof(RadzenStrings.PivotDataGrid_OthersText)); set => othersText = value; }
 
         /// <summary>
         /// Gets or sets the empty template shown when Data is empty collection.
@@ -120,12 +143,14 @@ namespace Radzen.Blazor
         [Parameter]
         public RenderFragment? FieldsPickerHeaderTemplate { get; set; }
 
+        private string? fieldsPickerHeaderText;
+
         /// <summary>
         /// Gets or sets the fields picker header text.
         /// </summary>
         /// <value>The fields picker header text.</value>
         [Parameter]
-        public string FieldsPickerHeaderText { get; set; } = "Settings";
+        public string FieldsPickerHeaderText { get => fieldsPickerHeaderText ?? Localize(nameof(RadzenStrings.PivotDataGrid_FieldsPickerHeaderText)); set => fieldsPickerHeaderText = value; }
 
         /// <summary>
         /// Gets or sets value indicating if the fields picker is expanded.
@@ -170,30 +195,38 @@ namespace Radzen.Blazor
         [Parameter]
         public LogicalFilterOperator LogicalFilterOperator { get; set; } = LogicalFilterOperator.And;
 
+        private string? rowsText;
+
         /// <summary>
         /// Gets or sets the Rows text.
         /// </summary>
         [Parameter]
-        public string RowsText { get; set; } = "Rows";
+        public string RowsText { get => rowsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_RowsText)); set => rowsText = value; }
+
+        private string? columnsText;
 
         /// <summary>
         /// Gets or sets the Columns text.
         /// </summary>
         [Parameter]
-        public string ColumnsText { get; set; } = "Columns";
+        public string ColumnsText { get => columnsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_ColumnsText)); set => columnsText = value; }
+
+        private string? aggregatesText;
 
         /// <summary>
         /// Gets or sets the Aggregates text.
         /// </summary>
         [Parameter]
-        public string AggregatesText { get; set; } = "Aggregates";
+        public string AggregatesText { get => aggregatesText ?? Localize(nameof(RadzenStrings.PivotDataGrid_AggregatesText)); set => aggregatesText = value; }
+
+        private string? sortAriaLabelFormat;
 
         /// <summary>
         /// Gets or sets the sort aria label format.
         /// </summary>
         /// <value>The sort aria label format.</value>
         [Parameter]
-        public string SortAriaLabelFormat { get; set; } = "Sort by {0}";
+        public string SortAriaLabelFormat { get => sortAriaLabelFormat ?? Localize(nameof(RadzenStrings.PivotDataGrid_SortAriaLabelFormat)); set => sortAriaLabelFormat = value; }
 
         /// <summary>
         /// Gets or set the filter icon to use.
@@ -201,190 +234,246 @@ namespace Radzen.Blazor
         [Parameter]
         public string FilterIcon { get; set; } = "filter_alt";
 
+        private string? filterText;
+
         /// <summary>
         /// Gets or sets the filter text.
         /// </summary>
         [Parameter]
-        public string FilterText { get; set; } = "Filter";
+        public string FilterText { get => filterText ?? Localize(nameof(RadzenStrings.PivotDataGrid_FilterText)); set => filterText = value; }
+
+        private string? enumFilterSelectText;
 
         /// <summary>
         /// Gets or sets the enum filter select text.
         /// </summary>
         [Parameter]
-        public string EnumFilterSelectText { get; set; } = "Select...";
+        public string EnumFilterSelectText { get => enumFilterSelectText ?? Localize(nameof(RadzenStrings.PivotDataGrid_EnumFilterSelectText)); set => enumFilterSelectText = value; }
+
+        private string? applyText;
 
         /// <summary>
         /// Gets or sets the apply text.
         /// </summary>
         [Parameter]
-        public string ApplyText { get; set; } = "Apply";
+        public string ApplyText { get => applyText ?? Localize(nameof(RadzenStrings.PivotDataGrid_ApplyText)); set => applyText = value; }
+
+        private string? clearText;
 
         /// <summary>
         /// Gets or sets the clear text.
         /// </summary>
         [Parameter]
-        public string ClearText { get; set; } = "Clear";
+        public string ClearText { get => clearText ?? Localize(nameof(RadzenStrings.PivotDataGrid_ClearText)); set => clearText = value; }
+
+        private string? filterOperatorAriaLabel;
 
         /// <summary>
         /// Gets or sets the filter operator aria label.
         /// </summary>
         [Parameter]
-        public string FilterOperatorAriaLabel { get; set; } = "Filter operator";
+        public string FilterOperatorAriaLabel { get => filterOperatorAriaLabel ?? Localize(nameof(RadzenStrings.PivotDataGrid_FilterOperatorAriaLabel)); set => filterOperatorAriaLabel = value; }
+
+        private string? filterValueAriaLabel;
 
         /// <summary>
         /// Gets or sets the filter value aria label.
         /// </summary>
         [Parameter]
-        public string FilterValueAriaLabel { get; set; } = "Filter value";
+        public string FilterValueAriaLabel { get => filterValueAriaLabel ?? Localize(nameof(RadzenStrings.PivotDataGrid_FilterValueAriaLabel)); set => filterValueAriaLabel = value; }
+
+        private string? secondFilterOperatorAriaLabel;
 
         /// <summary>
         /// Gets or sets the second filter operator aria label.
         /// </summary>
         [Parameter]
-        public string SecondFilterOperatorAriaLabel { get; set; } = "Second filter operator";
+        public string SecondFilterOperatorAriaLabel { get => secondFilterOperatorAriaLabel ?? Localize(nameof(RadzenStrings.PivotDataGrid_SecondFilterOperatorAriaLabel)); set => secondFilterOperatorAriaLabel = value; }
+
+        private string? secondFilterValueAriaLabel;
 
         /// <summary>
         /// Gets or sets the second filter value aria label.
         /// </summary>
         [Parameter]
-        public string SecondFilterValueAriaLabel { get; set; } = "Second filter value";
+        public string SecondFilterValueAriaLabel { get => secondFilterValueAriaLabel ?? Localize(nameof(RadzenStrings.PivotDataGrid_SecondFilterValueAriaLabel)); set => secondFilterValueAriaLabel = value; }
+
+        private string? logicalOperatorAriaLabel;
 
         /// <summary>
         /// Gets or sets the logical operator aria label.
         /// </summary>
         [Parameter]
-        public string LogicalOperatorAriaLabel { get; set; } = "Logical operator";
+        public string LogicalOperatorAriaLabel { get => logicalOperatorAriaLabel ?? Localize(nameof(RadzenStrings.PivotDataGrid_LogicalOperatorAriaLabel)); set => logicalOperatorAriaLabel = value; }
+
+        private string? andOperatorText;
 
         /// <summary>
         /// Gets or sets the and operator text.
         /// </summary>
         [Parameter]
-        public string AndOperatorText { get; set; } = "And";
+        public string AndOperatorText { get => andOperatorText ?? Localize(nameof(RadzenStrings.PivotDataGrid_AndOperatorText)); set => andOperatorText = value; }
+
+        private string? orOperatorText;
 
         /// <summary>
         /// Gets or sets the or operator text.
         /// </summary>
         [Parameter]
-        public string OrOperatorText { get; set; } = "Or";
+        public string OrOperatorText { get => orOperatorText ?? Localize(nameof(RadzenStrings.PivotDataGrid_OrOperatorText)); set => orOperatorText = value; }
+
+        private string? equalsText;
 
         /// <summary>
         /// Gets or sets the equals text.
         /// </summary>
         /// <value>The equals text.</value>
         [Parameter]
-        public string EqualsText { get; set; } = "Equals";
+        public string EqualsText { get => equalsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_EqualsText)); set => equalsText = value; }
+
+        private string? notEqualsText;
 
         /// <summary>
         /// Gets or sets the not equals text.
         /// </summary>
         /// <value>The not equals text.</value>
         [Parameter]
-        public string NotEqualsText { get; set; } = "Not equals";
+        public string NotEqualsText { get => notEqualsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_NotEqualsText)); set => notEqualsText = value; }
+
+        private string? lessThanText;
 
         /// <summary>
         /// Gets or sets the less than text.
         /// </summary>
         /// <value>The less than text.</value>
         [Parameter]
-        public string LessThanText { get; set; } = "Less than";
+        public string LessThanText { get => lessThanText ?? Localize(nameof(RadzenStrings.PivotDataGrid_LessThanText)); set => lessThanText = value; }
+
+        private string? lessThanOrEqualsText;
 
         /// <summary>
         /// Gets or sets the less than or equals text.
         /// </summary>
         /// <value>The less than or equals text.</value>
         [Parameter]
-        public string LessThanOrEqualsText { get; set; } = "Less than or equals";
+        public string LessThanOrEqualsText { get => lessThanOrEqualsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_LessThanOrEqualsText)); set => lessThanOrEqualsText = value; }
+
+        private string? greaterThanText;
 
         /// <summary>
         /// Gets or sets the greater than text.
         /// </summary>
         /// <value>The greater than text.</value>
         [Parameter]
-        public string GreaterThanText { get; set; } = "Greater than";
+        public string GreaterThanText { get => greaterThanText ?? Localize(nameof(RadzenStrings.PivotDataGrid_GreaterThanText)); set => greaterThanText = value; }
+
+        private string? greaterThanOrEqualsText;
 
         /// <summary>
         /// Gets or sets the greater than or equals text.
         /// </summary>
         /// <value>The greater than or equals text.</value>
         [Parameter]
-        public string GreaterThanOrEqualsText { get; set; } = "Greater than or equals";
+        public string GreaterThanOrEqualsText { get => greaterThanOrEqualsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_GreaterThanOrEqualsText)); set => greaterThanOrEqualsText = value; }
+
+        private string? endsWithText;
 
         /// <summary>
         /// Gets or sets the ends with text.
         /// </summary>
         /// <value>The ends with text.</value>
         [Parameter]
-        public string EndsWithText { get; set; } = "Ends with";
+        public string EndsWithText { get => endsWithText ?? Localize(nameof(RadzenStrings.PivotDataGrid_EndsWithText)); set => endsWithText = value; }
+
+        private string? containsText;
 
         /// <summary>
         /// Gets or sets the contains text.
         /// </summary>
         /// <value>The contains text.</value>
         [Parameter]
-        public string ContainsText { get; set; } = "Contains";
+        public string ContainsText { get => containsText ?? Localize(nameof(RadzenStrings.PivotDataGrid_ContainsText)); set => containsText = value; }
+
+        private string? doesNotContainText;
 
         /// <summary>
         /// Gets or sets the does not contain text.
         /// </summary>
         /// <value>The does not contain text.</value>
         [Parameter]
-        public string DoesNotContainText { get; set; } = "Does not contain";
+        public string DoesNotContainText { get => doesNotContainText ?? Localize(nameof(RadzenStrings.PivotDataGrid_DoesNotContainText)); set => doesNotContainText = value; }
+
+        private string? inText;
 
         /// <summary>
         /// Gets or sets the in operator text.
         /// </summary>
         /// <value>The in operator text.</value>
         [Parameter]
-        public string InText { get; set; } = "In";
+        public string InText { get => inText ?? Localize(nameof(RadzenStrings.PivotDataGrid_InText)); set => inText = value; }
+
+        private string? notInText;
 
         /// <summary>
         /// Gets or sets the not in operator text.
         /// </summary>
         /// <value>The not in operator text.</value>
         [Parameter]
-        public string NotInText { get; set; } = "Not in";
+        public string NotInText { get => notInText ?? Localize(nameof(RadzenStrings.PivotDataGrid_NotInText)); set => notInText = value; }
+
+        private string? startsWithText;
 
         /// <summary>
         /// Gets or sets the starts with text.
         /// </summary>
         /// <value>The starts with text.</value>
         [Parameter]
-        public string StartsWithText { get; set; } = "Starts with";
+        public string StartsWithText { get => startsWithText ?? Localize(nameof(RadzenStrings.PivotDataGrid_StartsWithText)); set => startsWithText = value; }
+
+        private string? isNotNullText;
 
         /// <summary>
         /// Gets or sets the not null text.
         /// </summary>
         /// <value>The not null text.</value>
         [Parameter]
-        public string IsNotNullText { get; set; } = "Is not null";
+        public string IsNotNullText { get => isNotNullText ?? Localize(nameof(RadzenStrings.PivotDataGrid_IsNotNullText)); set => isNotNullText = value; }
+
+        private string? isNullText;
 
         /// <summary>
         /// Gets or sets the is null text.
         /// </summary>
         /// <value>The null text.</value>
         [Parameter]
-        public string IsNullText { get; set; } = "Is null";
+        public string IsNullText { get => isNullText ?? Localize(nameof(RadzenStrings.PivotDataGrid_IsNullText)); set => isNullText = value; }
+
+        private string? isEmptyText;
 
         /// <summary>
         /// Gets or sets the is empty text.
         /// </summary>
         /// <value>The empty text.</value>
         [Parameter]
-        public string IsEmptyText { get; set; } = "Is empty";
+        public string IsEmptyText { get => isEmptyText ?? Localize(nameof(RadzenStrings.PivotDataGrid_IsEmptyText)); set => isEmptyText = value; }
+
+        private string? isNotEmptyText;
 
         /// <summary>
         /// Gets or sets the is not empty text.
         /// </summary>
         /// <value>The not empty text.</value>
         [Parameter]
-        public string IsNotEmptyText { get; set; } = "Is not empty";
+        public string IsNotEmptyText { get => isNotEmptyText ?? Localize(nameof(RadzenStrings.PivotDataGrid_IsNotEmptyText)); set => isNotEmptyText = value; }
+
+        private string? customText;
 
         /// <summary>
         /// Gets or sets the custom filter operator text.
         /// </summary>
         /// <value>The custom filter operator text.</value>
         [Parameter]
-        public string CustomText { get; set; } = "Custom";
+        public string CustomText { get => customText ?? Localize(nameof(RadzenStrings.PivotDataGrid_CustomText)); set => customText = value; }
 
         /// <summary>
         /// Gets or sets the enum filter translation function.
@@ -429,7 +518,7 @@ namespace Radzen.Blazor
 
         // Filter functionality
         private RadzenPivotField<TItem>? currentFilterField;
-        private Popup? filterPopup;
+        private RadzenPopup? filterPopup;
 
         /// <summary>
         /// Gets the columns collection.
@@ -547,7 +636,9 @@ namespace Radzen.Blazor
         {
             var root = new ColumnHeaderNode { Level = 0, Title = null };
             if (pivotColumns.Count == 0 || Data == null)
+            {
                 return root;
+            }
 
             BuildColumnHeaderTreeRecursive(root, PagedView, 0, new List<object>());
 
@@ -557,7 +648,9 @@ namespace Radzen.Blazor
         void BuildColumnHeaderTreeRecursive(ColumnHeaderNode node, IQueryable<TItem> items, int level, List<object> path)
         {
             if (level >= pivotColumns.Count)
+            {
                 return;
+            }
 
             var col = pivotColumns[level];
 
@@ -567,7 +660,9 @@ namespace Radzen.Blazor
                : (col.GetSortOrder() == SortOrder.Descending) ? groups.OrderByDescending(g => g.Key)
                : groups;
 
-            foreach (var group in sortedGroups)
+            var finalGroups = ApplyMaxGroups(sortedGroups, col.MaxGroups, out var othersItems);
+
+            foreach (var group in finalGroups)
             {
                 var currentPath = new List<object>(path) { group.Key };
                 var pathKey = string.Join("|", currentPath);
@@ -591,6 +686,90 @@ namespace Radzen.Blazor
                 }
                 node.Children.Add(child);
             }
+
+            if (othersItems != null)
+            {
+                var currentPath = new List<object>(path) { OthersGroupKey };
+                var pathKey = string.Join("|", currentPath);
+                var isCollapsed = AllowDrillDown && (!_collapsedColumnGroups.ContainsKey(pathKey) || _collapsedColumnGroups[pathKey]);
+
+                var othersLabel = col.OthersLabel ?? OthersText;
+
+                var child = new ColumnHeaderNode
+                {
+                    Value = othersLabel,
+                    Title = othersLabel,
+                    Level = level + 1,
+                    Width = col.Width,
+                    IsCollapsed = isCollapsed,
+                    PathKey = pathKey,
+                    IsOthers = true
+                };
+
+                if (!isCollapsed)
+                {
+                    BuildColumnHeaderTreeRecursive(child, othersItems.AsQueryable(), level + 1, currentPath);
+                }
+                node.Children.Add(child);
+            }
+        }
+
+        private const string OthersGroupKey = "__rz_pivot_others__";
+
+        private static IEnumerable<TItem> GetGroupItems(GroupResult group)
+        {
+            return group.Items?.Cast<TItem>() ?? Enumerable.Empty<TItem>();
+        }
+
+        private static double? ToSortKey(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            try { return Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture); } catch { return null; }
+        }
+
+        /// <summary>
+        /// Keeps the most significant groups when their number exceeds the configured limit and collects the items of the remaining groups.
+        /// Groups are ranked by the sorted aggregate or the first aggregate; the kept groups preserve their current order.
+        /// </summary>
+        private List<GroupResult> ApplyMaxGroups(IEnumerable<GroupResult> groups, int? maxGroups, out List<TItem>? othersItems)
+        {
+            othersItems = null;
+
+            var groupList = groups as List<GroupResult> ?? groups.ToList();
+
+            if (maxGroups == null || maxGroups.Value <= 0 || groupList.Count <= maxGroups.Value)
+            {
+                return groupList;
+            }
+
+            var rankingAggregate = pivotAggregates.FirstOrDefault(a => a.GetSortOrder() != null) ?? pivotAggregates.FirstOrDefault();
+
+            var keptGroups = rankingAggregate != null
+                ? groupList.OrderByDescending(g => ToSortKey(GetAggregateValue(GetGroupItems(g).AsQueryable(), rankingAggregate)) ?? double.MinValue).Take(maxGroups.Value).ToHashSet()
+                : groupList.Take(maxGroups.Value).ToHashSet();
+
+            var result = new List<GroupResult>(maxGroups.Value);
+            var remainingItems = new List<TItem>();
+
+            foreach (var group in groupList)
+            {
+                if (keptGroups.Contains(group))
+                {
+                    result.Add(group);
+                }
+                else
+                {
+                    remainingItems.AddRange(GetGroupItems(group));
+                }
+            }
+
+            othersItems = remainingItems;
+
+            return result;
         }
 
         List<List<ColumnHeaderCell>> FlattenColumnHeaderTree(ColumnHeaderNode root)
@@ -598,7 +777,10 @@ namespace Radzen.Blazor
             var rows = new List<List<ColumnHeaderCell>>();
             int maxLevel = pivotColumns.Count;
             for (int i = 0; i < maxLevel; i++)
+            {
                 rows.Add(new List<ColumnHeaderCell>());
+            }
+
             FlattenColumnHeaderTreeRecursive(root, rows, 0, maxLevel);
             return rows;
         }
@@ -642,7 +824,11 @@ namespace Radzen.Blazor
 
         int GetLeafCount(ColumnHeaderNode node)
         {
-            if (node.Children.Count == 0) return 1;
+            if (node.Children.Count == 0)
+            {
+                return 1;
+            }
+
             return node.Children.Sum(GetLeafCount);
         }
 
@@ -916,11 +1102,15 @@ namespace Radzen.Blazor
                             builder.AddAttribute(9, "class", $"notranslate rz-tree-toggler rzi rzi-caret-{(rowHeaderCell.IsCollapsed ? "right" : "down")}");
                             builder.AddAttribute(10, "onclick", EventCallback.Factory.Create(this, () => ToggleRowDrillDown(rowHeaderCell.PathKey)));
                             builder.AddAttribute(11, "style", "margin-inline-start:0");
+                            builder.AddAttribute(12, "role", "button");
+                            builder.AddAttribute(13, "tabindex", "0");
+                            builder.AddAttribute(14, "aria-expanded", (!rowHeaderCell.IsCollapsed).ToString().ToLowerInvariant());
+                            builder.AddAttribute(15, "onkeydown", EventCallback.Factory.Create<KeyboardEventArgs>(this, args => OnRowDrillDownKeyDown(args, rowHeaderCell.PathKey)));
                             builder.CloseElement();
 
-                            builder.OpenElement(13, "span");
-                            builder.AddAttribute(14, "class", "rz-pivot-header-text");
-                            builder.AddContent(15, rowHeaderCell.Title);
+                            builder.OpenElement(16, "span");
+                            builder.AddAttribute(17, "class", "rz-pivot-header-text");
+                            builder.AddContent(18, rowHeaderCell.Title);
                             builder.CloseElement();
 
                             builder.CloseElement();
@@ -1101,12 +1291,51 @@ namespace Radzen.Blazor
         }
 
         /// <summary>
+        /// Gets the items for a specific row.
+        /// </summary>
+        /// <param name="pivotRow">The pivot row data.</param>
+        /// <returns>The items for this row.</returns>
+        private IQueryable<TItem> GetRowItems(PivotBodyRow pivotRow)
+        {
+            if (Data == null || pivotRows.Count == 0)
+            {
+                return Enumerable.Empty<TItem>().AsQueryable();
+            }
+
+            var items = PagedView;
+
+            // Filter items based on row header values. Ignore padded row header cells (they have null PathKey).
+            for (int i = 0; i < pivotRow.RowHeaderCells.Count && i < pivotRows.Count; i++)
+            {
+                var cell = pivotRow.RowHeaderCells[i];
+                if (cell.PathKey == null)
+                {
+                    continue; // Skip padding cells added to align depths
+                }
+
+                var pr = pivotRows[i];
+                if (pr?.Property != null)
+                {
+                    var property = pr.Property;
+                    var value = ExpressionSerializer.FormatValue(cell.Value ?? "") ?? "";
+                    items = property.Contains("it[", StringComparison.Ordinal) ?
+                           items.Where($@"it => {property} == {value}") : items.Where($@"i => i.{property} == {value}");
+                }
+            }
+
+            return items;
+        }
+
+        /// <summary>
         /// Toggles the drill down state for a column group.
         /// </summary>
         /// <param name="pathKey">The path key identifying the column group.</param>
         public async Task ToggleColumnDrillDown(string pathKey)
         {
-            if (!AllowDrillDown) return;
+            if (!AllowDrillDown)
+            {
+                return;
+            }
 
             if (_collapsedColumnGroups.TryGetValue(pathKey, out var isCollapsed))
             {
@@ -1129,7 +1358,10 @@ namespace Radzen.Blazor
         /// <param name="pathKey">The path key identifying the row group.</param>
         public async Task ToggleRowDrillDown(string pathKey)
         {
-            if (!AllowDrillDown) return;
+            if (!AllowDrillDown)
+            {
+                return;
+            }
 
             if (_collapsedRowGroups.TryGetValue(pathKey, out var isRowCollapsed))
             {
@@ -1158,7 +1390,9 @@ namespace Radzen.Blazor
             ArgumentNullException.ThrowIfNull(aggregate);
 
             if (items == null || !items.Any())
+            {
                 return null;
+            }
 
             if (isCollapsed)
             {
@@ -1178,6 +1412,15 @@ namespace Radzen.Blazor
             if (!_aggregateTypeCache.TryGetValue(key, out var info))
             {
                 var propertyType = aggregate.Property != null ? PropertyAccess.GetPropertyType(typeof(TItem), aggregate.Property) : typeof(object);
+
+                // For dynamic data (e.g. IDictionary<string, object>) the property is a dynamic LINQ
+                // expression, so reflection cannot resolve its type. Fall back to the explicitly
+                // configured Type, mirroring RadzenPivotField.FilterPropertyType.
+                if ((propertyType == null || propertyType == typeof(object)) && aggregate.Type != null)
+                {
+                    propertyType = aggregate.Type;
+                }
+
                 info = (propertyType, propertyType != null && PropertyAccess.IsNumeric(propertyType));
                 _aggregateTypeCache[key] = info;
             }
@@ -1195,7 +1438,9 @@ namespace Radzen.Blazor
             ArgumentNullException.ThrowIfNull(aggregate);
 
             if (items == null || !items.Any())
+            {
                 return null;
+            }
 
             try
             {
@@ -1270,7 +1515,9 @@ namespace Radzen.Blazor
         {
             var root = new RowHeaderNode { Level = 0, Title = null };
             if (pivotRows.Count == 0 || Data == null)
+            {
                 return root;
+            }
 
             BuildRowHeaderTreeRecursive(root, PagedView, 0, new List<object>());
 
@@ -1293,12 +1540,6 @@ namespace Radzen.Blazor
             IEnumerable<GroupResult> sortedGroups;
             if (sortedAggregate != null)
             {
-                static double? ToSortKey(object? value)
-                {
-                    if (value == null) return null;
-                    try { return Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture); } catch { return null; }
-                }
-
                 var groupsWithValues = groups.AsEnumerable().Select(g => new
                 {
                     Group = g,
@@ -1316,7 +1557,9 @@ namespace Radzen.Blazor
                     : groups;
             }
 
-            foreach (var group in sortedGroups)
+            var finalGroups = ApplyMaxGroups(sortedGroups, row.MaxGroups, out var othersItems);
+
+            foreach (var group in finalGroups)
             {
                 var currentPath = new List<object>(path) { group.Key };
                 var pathKey = string.Join("|", currentPath);
@@ -1338,6 +1581,34 @@ namespace Radzen.Blazor
                 else
                 {
                     child.Items = group.Items?.Cast<TItem>().AsQueryable() ?? Enumerable.Empty<TItem>().AsQueryable();
+                }
+                node.Children.Add(child);
+            }
+
+            if (othersItems != null)
+            {
+                var currentPath = new List<object>(path) { OthersGroupKey };
+                var pathKey = string.Join("|", currentPath);
+                var isCollapsed = AllowDrillDown && (!_collapsedRowGroups.ContainsKey(pathKey) || _collapsedRowGroups[pathKey]);
+
+                var othersLabel = row.OthersLabel ?? OthersText;
+
+                var child = new RowHeaderNode
+                {
+                    Value = othersLabel,
+                    Title = othersLabel,
+                    Level = level + 1,
+                    IsCollapsed = isCollapsed,
+                    PathKey = pathKey
+                };
+
+                if (!isCollapsed)
+                {
+                    BuildRowHeaderTreeRecursive(child, othersItems.AsQueryable(), level + 1, currentPath);
+                }
+                else
+                {
+                    child.Items = othersItems.AsQueryable();
                 }
                 node.Children.Add(child);
             }
@@ -1455,19 +1726,29 @@ namespace Radzen.Blazor
                 columnValues.Add(values);
             }
 
+            var hasOthersGroups = pivotColumns.Any(c => c.MaxGroups > 0);
+
             var path = new List<object?>(pivotColumns.Count);
             for (int i = 0; i < items.Count; i++)
             {
-                path.Clear();
                 string? matchKey = null;
-                for (int level = 0; level < pivotColumns.Count; level++)
+
+                if (hasOthersGroups)
                 {
-                    path.Add(columnValues[level][i]);
-                    var key = ColumnPathKey(path);
-                    if (leafKeys.Contains(key))
+                    matchKey = FindColumnLeafKey(i, columnValues);
+                }
+                else
+                {
+                    path.Clear();
+                    for (int level = 0; level < pivotColumns.Count; level++)
                     {
-                        matchKey = key;
-                        break;
+                        path.Add(columnValues[level][i]);
+                        var key = ColumnPathKey(path);
+                        if (leafKeys.Contains(key))
+                        {
+                            matchKey = key;
+                            break;
+                        }
                     }
                 }
 
@@ -1485,6 +1766,49 @@ namespace Radzen.Blazor
             }
 
             return buckets;
+        }
+
+        /// <summary>
+        /// Resolves the column leaf an item belongs to by walking the column header tree. Items whose value does not match
+        /// a kept group at some level fall into the synthetic Others group produced by <see cref="RadzenPivotColumn{TItem}.MaxGroups"/>.
+        /// </summary>
+        private string? FindColumnLeafKey(int itemIndex, List<List<object?>> columnValues)
+        {
+            var node = ColumnHeaderTreeRoot;
+            var path = new List<object?>(pivotColumns.Count);
+            var level = 0;
+
+            while (node.Children.Count > 0 && level < pivotColumns.Count)
+            {
+                var valueKey = columnValues[level][itemIndex]?.ToString() ?? string.Empty;
+                ColumnHeaderNode? match = null;
+                ColumnHeaderNode? others = null;
+
+                foreach (var child in node.Children)
+                {
+                    if (child.IsOthers)
+                    {
+                        others = child;
+                    }
+                    else if ((child.Value?.ToString() ?? string.Empty) == valueKey)
+                    {
+                        match = child;
+                        break;
+                    }
+                }
+
+                var next = match ?? others;
+                if (next == null)
+                {
+                    return null;
+                }
+
+                path.Add(next.Value);
+                node = next;
+                level++;
+            }
+
+            return node.Children.Count == 0 && path.Count > 0 ? ColumnPathKey(path) : null;
         }
 
         private static string ColumnPathKey(System.Collections.IEnumerable path)
@@ -1530,15 +1854,21 @@ namespace Radzen.Blazor
         // Helper for row header cell rowspan
         private int GetLeafCount(RowHeaderNode node)
         {
-            if (node.Children.Count == 0) return 1;
+            if (node.Children.Count == 0)
+            {
+                return 1;
+            }
+
             return node.Children.Sum(GetLeafCount);
         }
 
         private string? GetWidthForColumnPath(List<object> colPath)
         {
             if (colPath.Count == 0 || pivotColumns.Count == 0)
+            {
                 return null;
-            
+            }
+
             // For now, return the width of the first column
             // In a more complex implementation, you might want to calculate based on the path
             return pivotColumns[0].Width;
@@ -1606,6 +1936,7 @@ namespace Radzen.Blazor
             public bool IsCollapsed { get; set; }
             public string? PathKey { get; set; }
             public bool HasChildren { get; set; }
+            public bool IsOthers { get; set; }
             public RenderFragment<GroupResult>? HeaderTemplate { get; set; }
             public GroupResult? Group { get; set; }
         }
@@ -1702,6 +2033,15 @@ namespace Radzen.Blazor
             }
         }
 
+        async Task OnRowDrillDownKeyDown(KeyboardEventArgs args, string pathKey)
+        {
+            var key = args.Code != null ? args.Code : args.Key;
+            if (key == "Enter" || key == "Space")
+            {
+                await ToggleRowDrillDown(pathKey);
+            }
+        }
+
         private async Task HandleFieldSort<T>(List<T> allFields, T sortedField)
             where T : RadzenPivotField<TItem>
         {
@@ -1771,7 +2111,9 @@ namespace Radzen.Blazor
         private async Task ToggleFilter(RadzenPivotField<TItem> field, string filterIconRefKey)
         {
             if (field == null || !AllowFiltering || !field.Filterable)
+            {
                 return;
+            }
 
             currentFilterField = field;
             StateHasChanged();
@@ -1790,7 +2132,9 @@ namespace Radzen.Blazor
         private static Type GetFilterPropertyType(RadzenPivotField<TItem> field)
         {
             if (field == null || string.IsNullOrEmpty(field.Property))
+            {
                 return typeof(string);
+            }
 
             return PropertyAccess.GetPropertyType(typeof(TItem), field.Property) ?? typeof(string);
         }
@@ -1875,7 +2219,9 @@ namespace Radzen.Blazor
         private static bool CanSetFilterValue(RadzenPivotField<TItem> field, bool isFirst = true)
         {
             if (field == null)
+            {
                 return false;
+            }
 
             var filterOperator = isFirst ? field.GetFilterOperator() : field.GetSecondFilterOperator();
             return filterOperator != FilterOperator.IsNull && filterOperator != FilterOperator.IsNotNull;
@@ -2088,11 +2434,17 @@ namespace Radzen.Blazor
         {
             var propertyType = GetFilterPropertyType(field);
             if (PropertyAccess.IsDateOnly(propertyType))
+            {
                 return "yyyy-MM-dd";
+            }
             else if (PropertyAccess.IsDate(propertyType))
+            {
                 return "yyyy-MM-dd HH:mm";
+            }
             else
+            {
                 return "yyyy-MM-dd";
+            }
         }
 
         /// <summary>

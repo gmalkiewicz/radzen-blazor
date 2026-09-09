@@ -1,5 +1,6 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Radzen;
 using Radzen.Blazor;
 using System;
@@ -934,6 +935,115 @@ namespace Radzen.Blazor.Tests
             });
         }
 
+        static void BuildFilteredPivot(ComponentParameterCollectionBuilder<RadzenPivotDataGrid<SalesData>> p,
+            string region, string secondRegion = null)
+        {
+            p.Add(g => g.Data, AggregationData);
+            p.Add(g => g.AllowDrillDown, false);
+            p.Add(g => g.AllowFieldsPicking, false);
+
+            p.Add<RenderFragment>(g => g.Rows, b =>
+            {
+                b.OpenComponent<RadzenPivotRow<SalesData>>(0);
+                b.AddAttribute(1, nameof(RadzenPivotRow<SalesData>.Property), nameof(SalesData.Region));
+                b.AddAttribute(2, nameof(RadzenPivotRow<SalesData>.FilterValue), region);
+                b.AddAttribute(3, nameof(RadzenPivotRow<SalesData>.FilterOperator), FilterOperator.Equals);
+                b.AddAttribute(4, nameof(RadzenPivotRow<SalesData>.SecondFilterValue), secondRegion);
+                b.AddAttribute(5, nameof(RadzenPivotRow<SalesData>.SecondFilterOperator), FilterOperator.Equals);
+                b.AddAttribute(6, nameof(RadzenPivotRow<SalesData>.LogicalFilterOperator), LogicalFilterOperator.Or);
+                b.CloseComponent();
+            });
+
+            p.Add<RenderFragment>(g => g.Columns, b =>
+            {
+                b.OpenComponent<RadzenPivotColumn<SalesData>>(0);
+                b.AddAttribute(1, nameof(RadzenPivotColumn<SalesData>.Property), nameof(SalesData.Year));
+                b.CloseComponent();
+            });
+
+            p.Add<RenderFragment>(g => g.Aggregates, b =>
+            {
+                b.OpenComponent<RadzenPivotAggregate<SalesData>>(0);
+                b.AddAttribute(1, nameof(RadzenPivotAggregate<SalesData>.Property), nameof(SalesData.Amount));
+                b.AddAttribute(2, nameof(RadzenPivotAggregate<SalesData>.Aggregate), AggregateFunction.Sum);
+                b.CloseComponent();
+            });
+        }
+
+        static List<string> RowHeaders(IRenderedComponent<RadzenPivotDataGrid<SalesData>> component) =>
+            component.FindAll("tbody.rz-pivot-body td.rz-pivot-row-header")
+                .Select(c => c.TextContent.Trim()).ToList();
+
+        [Fact]
+        public void PivotDataGrid_ChangingABoundFilterValue_RefiltersTheRows()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(p => BuildFilteredPivot(p, "North"));
+
+            Assert.Contains("North", RowHeaders(component));
+            Assert.DoesNotContain("South", RowHeaders(component));
+
+            component.SetParametersAndRender(p => BuildFilteredPivot(p, "South"));
+
+            Assert.Contains("South", RowHeaders(component));
+            Assert.DoesNotContain("North", RowHeaders(component));
+        }
+
+        [Fact]
+        public void PivotDataGrid_ChangingABoundFilterValue_ReplacesTheInteractiveValue()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(p => BuildFilteredPivot(p, "North"));
+            var row = component.FindComponent<RadzenPivotRow<SalesData>>().Instance;
+            row.SetFilterValueInternal("North");
+
+            component.SetParametersAndRender(p => BuildFilteredPivot(p, "South"));
+
+            Assert.Contains("South", RowHeaders(component));
+            Assert.DoesNotContain("North", RowHeaders(component));
+        }
+
+        [Fact]
+        public void PivotDataGrid_ClearingABoundFilterValue_RestoresEveryRow()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(p => BuildFilteredPivot(p, "North"));
+
+            Assert.DoesNotContain("South", RowHeaders(component));
+
+            // Back to no filter at all, which is the same change in the other direction.
+            component.SetParametersAndRender(p => BuildFilteredPivot(p, null));
+
+            Assert.Contains("North", RowHeaders(component));
+            Assert.Contains("South", RowHeaders(component));
+        }
+
+        [Fact]
+        public void PivotDataGrid_ClearingABoundSecondFilterValue_ReplacesTheInteractiveValue()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(p => BuildFilteredPivot(p, "North", "South"));
+            var row = component.FindComponent<RadzenPivotRow<SalesData>>().Instance;
+            row.SetSecondFilterValueInternal("South");
+
+            component.SetParametersAndRender(p => BuildFilteredPivot(p, "North"));
+
+            Assert.Contains("North", RowHeaders(component));
+            Assert.DoesNotContain("South", RowHeaders(component));
+        }
+
         [Fact]
         public void PivotDataGrid_Sort_OrdersRows()
         {
@@ -1215,6 +1325,70 @@ namespace Radzen.Blazor.Tests
         }
 
         [Fact]
+        public void PivotDataGrid_DictionaryData_SumAggregatesNumericValues()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var data = new List<IDictionary<string, object>>
+            {
+                new Dictionary<string, object> { ["Region"] = "North", ["Year"] = 2023, ["Amount"] = 100.0 },
+                new Dictionary<string, object> { ["Region"] = "North", ["Year"] = 2023, ["Amount"] = 200.0 },
+                new Dictionary<string, object> { ["Region"] = "South", ["Year"] = 2024, ["Amount"] = 300.0 },
+            };
+
+            var regionExpr = PropertyAccess.GetDynamicPropertyExpression("Region", typeof(string));
+            var yearExpr = PropertyAccess.GetDynamicPropertyExpression("Year", typeof(int));
+            var amountExpr = PropertyAccess.GetDynamicPropertyExpression("Amount", typeof(double));
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<IDictionary<string, object>>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.AllowDrillDown, false);
+                parameters.Add(p => p.AllowFieldsPicking, false);
+
+                parameters.Add<RenderFragment>(p => p.Rows, b =>
+                {
+                    b.OpenComponent<RadzenPivotRow<IDictionary<string, object>>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotRow<IDictionary<string, object>>.Property), regionExpr);
+                    b.AddAttribute(2, nameof(RadzenPivotRow<IDictionary<string, object>>.Title), "Region");
+                    b.AddAttribute(3, nameof(RadzenPivotRow<IDictionary<string, object>>.Type), typeof(string));
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Columns, b =>
+                {
+                    b.OpenComponent<RadzenPivotColumn<IDictionary<string, object>>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotColumn<IDictionary<string, object>>.Property), yearExpr);
+                    b.AddAttribute(2, nameof(RadzenPivotColumn<IDictionary<string, object>>.Title), "Year");
+                    b.AddAttribute(3, nameof(RadzenPivotColumn<IDictionary<string, object>>.Type), typeof(int));
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Aggregates, b =>
+                {
+                    b.OpenComponent<RadzenPivotAggregate<IDictionary<string, object>>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotAggregate<IDictionary<string, object>>.Property), amountExpr);
+                    b.AddAttribute(2, nameof(RadzenPivotAggregate<IDictionary<string, object>>.Title), "Amount");
+                    b.AddAttribute(3, nameof(RadzenPivotAggregate<IDictionary<string, object>>.Aggregate), AggregateFunction.Sum);
+                    b.AddAttribute(4, nameof(RadzenPivotAggregate<IDictionary<string, object>>.Type), typeof(double));
+                    b.CloseComponent();
+                });
+            });
+
+            component.WaitForAssertion(() =>
+            {
+                var rows = component.FindAll("tbody.rz-pivot-body tr.rz-pivot-row");
+                Assert.Equal(2, rows.Count);
+
+                // Sum of Amount, not the item count: North = 100 + 200 = 300, South = 300.
+                Assert.Equal(new[] { "300", "" }, GetValueCellTexts(component, "North"));
+                Assert.Equal(new[] { "", "300" }, GetValueCellTexts(component, "South"));
+            });
+        }
+
+        [Fact]
         public void PivotDataGrid_FormatString_AppliedToValueAndTotalCells()
         {
             using var ctx = new TestContext();
@@ -1468,6 +1642,365 @@ namespace Radzen.Blazor.Tests
         }
 
         [Fact]
+        public void PivotDataGrid_RowMaxGroups_CombinesRemainingGroupsIntoOthers()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, rowMaxGroups: 1);
+
+            component.WaitForAssertion(() =>
+            {
+                var labels = component.FindAll("tbody.rz-pivot-body td.rz-pivot-row-header")
+                    .Select(c => c.TextContent.Trim()).ToList();
+
+                Assert.Equal(new[] { "South", "Others" }, labels);
+                Assert.Equal(new[] { "", "1400" }, GetValueCellTexts(component, "South"));
+                Assert.Equal(new[] { "600", "50" }, GetValueCellTexts(component, "Others"));
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_RowMaxGroups_UsesCustomOthersLabel()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, rowMaxGroups: 1, othersLabel: "Rest");
+
+            component.WaitForAssertion(() =>
+            {
+                var labels = component.FindAll("tbody.rz-pivot-body td.rz-pivot-row-header")
+                    .Select(c => c.TextContent.Trim()).ToList();
+
+                Assert.Contains("Rest", labels);
+                Assert.DoesNotContain("Others", labels);
+                Assert.DoesNotContain("North", labels);
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_RowMaxGroups_UsesGridOthersText()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, rowMaxGroups: 1, configure: parameters =>
+            {
+                parameters.Add(p => p.OthersText, "Autres");
+            });
+
+            component.WaitForAssertion(() =>
+            {
+                var labels = component.FindAll("tbody.rz-pivot-body td.rz-pivot-row-header")
+                    .Select(c => c.TextContent.Trim()).ToList();
+
+                Assert.Contains("Autres", labels);
+                Assert.DoesNotContain("Others", labels);
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_RowDrillDownToggler_IsKeyboardAccessible()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(parameters =>
+            {
+                parameters.Add(p => p.Data, AggregationData);
+                parameters.Add(p => p.AllowDrillDown, true);
+                parameters.Add(p => p.AllowFieldsPicking, false);
+
+                parameters.Add<RenderFragment>(p => p.Rows, b =>
+                {
+                    b.OpenComponent<RadzenPivotRow<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotRow<SalesData>.Property), nameof(SalesData.Region));
+                    b.AddAttribute(2, nameof(RadzenPivotRow<SalesData>.Title), "Region");
+                    b.CloseComponent();
+                    b.OpenComponent<RadzenPivotRow<SalesData>>(3);
+                    b.AddAttribute(4, nameof(RadzenPivotRow<SalesData>.Property), nameof(SalesData.Category));
+                    b.AddAttribute(5, nameof(RadzenPivotRow<SalesData>.Title), "Category");
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Columns, b =>
+                {
+                    b.OpenComponent<RadzenPivotColumn<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotColumn<SalesData>.Property), nameof(SalesData.Year));
+                    b.AddAttribute(2, nameof(RadzenPivotColumn<SalesData>.Title), "Year");
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Aggregates, b =>
+                {
+                    b.OpenComponent<RadzenPivotAggregate<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotAggregate<SalesData>.Property), nameof(SalesData.Amount));
+                    b.AddAttribute(2, nameof(RadzenPivotAggregate<SalesData>.Title), "Amount");
+                    b.AddAttribute(3, nameof(RadzenPivotAggregate<SalesData>.Aggregate), AggregateFunction.Sum);
+                    b.CloseComponent();
+                });
+            });
+
+            var toggler = component.Find("tbody.rz-pivot-body .rz-tree-toggler");
+            Assert.Equal("button", toggler.GetAttribute("role"));
+            Assert.Equal("0", toggler.GetAttribute("tabindex"));
+            Assert.Equal("false", toggler.GetAttribute("aria-expanded"));
+
+            toggler.KeyDown(new KeyboardEventArgs { Code = "Enter" });
+
+            component.WaitForAssertion(() =>
+            {
+                Assert.Equal(3, component.FindAll("tbody.rz-pivot-body tr.rz-pivot-row").Count);
+                Assert.Equal("true", component.Find("tbody.rz-pivot-body .rz-tree-toggler").GetAttribute("aria-expanded"));
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_RowMaxGroups_LargerThanGroupCount_ShowsAllGroups()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, rowMaxGroups: 5);
+
+            component.WaitForAssertion(() =>
+            {
+                var labels = component.FindAll("tbody.rz-pivot-body td.rz-pivot-row-header")
+                    .Select(c => c.TextContent.Trim()).ToList();
+
+                Assert.Equal(new[] { "North", "South" }, labels);
+                Assert.DoesNotContain("Others", labels);
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_RowMaxGroups_RowTotalsIncludeOthers()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, rowMaxGroups: 1, configure: parameters =>
+            {
+                parameters.Add(p => p.ShowRowsTotals, true);
+            });
+
+            component.WaitForAssertion(() =>
+            {
+                Assert.Equal(new[] { "1400" }, GetTotalCellTexts(component, "South"));
+                Assert.Equal(new[] { "650" }, GetTotalCellTexts(component, "Others"));
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_ColumnMaxGroups_CombinesRemainingGroupsIntoOthers()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, columnMaxGroups: 1);
+
+            component.WaitForAssertion(() =>
+            {
+                var columnHeaders = component.FindAll(".rz-pivot-content thead .rz-pivot-column-header")
+                    .Select(h => h.TextContent.Trim()).ToList();
+
+                Assert.Contains("2024", columnHeaders);
+                Assert.Contains("Others", columnHeaders);
+                Assert.DoesNotContain("2023", columnHeaders);
+
+                Assert.Equal(new[] { "50", "600" }, GetValueCellTexts(component, "North"));
+                Assert.Equal(new[] { "1400", "" }, GetValueCellTexts(component, "South"));
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_ColumnMaxGroups_ColumnTotalsIncludeOthers()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, columnMaxGroups: 1, configure: parameters =>
+            {
+                parameters.Add(p => p.ShowColumnsTotals, true);
+            });
+
+            component.WaitForAssertion(() =>
+            {
+                var footerVals = component.FindAll("tfoot.rz-pivot-footer td.rz-pivot-footer-value")
+                    .Select(c => c.TextContent.Trim()).ToList();
+
+                Assert.Equal(new[] { "1450", "600" }, footerVals);
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_MaxGroups_IQueryableData_ComputesCorrectCellValues()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = RenderMaxGroupsGrid(ctx, rowMaxGroups: 1, columnMaxGroups: 1, data: AggregationData.AsQueryable());
+
+            component.WaitForAssertion(() =>
+            {
+                Assert.Equal(new[] { "1400", "" }, GetValueCellTexts(component, "South"));
+                Assert.Equal(new[] { "50", "600" }, GetValueCellTexts(component, "Others"));
+            });
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task PivotDataGrid_RowMaxGroups_OthersGroupSupportsDrillDown()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(parameters =>
+            {
+                parameters.Add(p => p.Data, AggregationData);
+                parameters.Add(p => p.AllowDrillDown, true);
+                parameters.Add(p => p.AllowFieldsPicking, false);
+
+                parameters.Add<RenderFragment>(p => p.Rows, b =>
+                {
+                    b.OpenComponent<RadzenPivotRow<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotRow<SalesData>.Property), nameof(SalesData.Region));
+                    b.AddAttribute(2, nameof(RadzenPivotRow<SalesData>.Title), "Region");
+                    b.AddAttribute(3, nameof(RadzenPivotRow<SalesData>.MaxGroups), (int?)1);
+                    b.CloseComponent();
+                    b.OpenComponent<RadzenPivotRow<SalesData>>(4);
+                    b.AddAttribute(5, nameof(RadzenPivotRow<SalesData>.Property), nameof(SalesData.Category));
+                    b.AddAttribute(6, nameof(RadzenPivotRow<SalesData>.Title), "Category");
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Columns, b =>
+                {
+                    b.OpenComponent<RadzenPivotColumn<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotColumn<SalesData>.Property), nameof(SalesData.Year));
+                    b.AddAttribute(2, nameof(RadzenPivotColumn<SalesData>.Title), "Year");
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Aggregates, b =>
+                {
+                    b.OpenComponent<RadzenPivotAggregate<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotAggregate<SalesData>.Property), nameof(SalesData.Amount));
+                    b.AddAttribute(2, nameof(RadzenPivotAggregate<SalesData>.Title), "Amount");
+                    b.AddAttribute(3, nameof(RadzenPivotAggregate<SalesData>.Aggregate), AggregateFunction.Sum);
+                    b.CloseComponent();
+                });
+            });
+
+            component.WaitForAssertion(() =>
+            {
+                Assert.Equal(2, component.FindAll("tbody.rz-pivot-body tr.rz-pivot-row").Count);
+                Assert.Equal(new[] { "600", "50" }, GetValueCellTexts(component, "Others"));
+            });
+
+            await component.InvokeAsync(() => component.Instance.ToggleRowDrillDown("__rz_pivot_others__"));
+
+            component.WaitForAssertion(() =>
+            {
+                var labels = component.FindAll("tbody.rz-pivot-body td.rz-pivot-row-header")
+                    .Select(c => c.TextContent.Trim()).Where(t => !string.IsNullOrEmpty(t)).ToList();
+
+                Assert.Contains("Electronics", labels);
+                Assert.Contains("Furniture", labels);
+                Assert.Equal(3, component.FindAll("tbody.rz-pivot-body tr.rz-pivot-row").Count);
+            });
+        }
+
+        private static IRenderedComponent<RadzenPivotDataGrid<SalesData>> RenderMaxGroupsGrid(
+            TestContext ctx,
+            int? rowMaxGroups = null,
+            int? columnMaxGroups = null,
+            string othersLabel = null,
+            IEnumerable<SalesData> data = null,
+            Action<ComponentParameterCollectionBuilder<RadzenPivotDataGrid<SalesData>>> configure = null)
+        {
+            return ctx.RenderComponent<RadzenPivotDataGrid<SalesData>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data ?? AggregationData);
+                parameters.Add(p => p.AllowDrillDown, false);
+                parameters.Add(p => p.AllowFieldsPicking, false);
+
+                parameters.Add<RenderFragment>(p => p.Rows, b =>
+                {
+                    b.OpenComponent<RadzenPivotRow<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotRow<SalesData>.Property), nameof(SalesData.Region));
+                    b.AddAttribute(2, nameof(RadzenPivotRow<SalesData>.Title), "Region");
+                    if (rowMaxGroups != null)
+                    {
+                        b.AddAttribute(3, nameof(RadzenPivotRow<SalesData>.MaxGroups), rowMaxGroups);
+                    }
+                    if (othersLabel != null)
+                    {
+                        b.AddAttribute(4, nameof(RadzenPivotRow<SalesData>.OthersLabel), othersLabel);
+                    }
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Columns, b =>
+                {
+                    b.OpenComponent<RadzenPivotColumn<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotColumn<SalesData>.Property), nameof(SalesData.Year));
+                    b.AddAttribute(2, nameof(RadzenPivotColumn<SalesData>.Title), "Year");
+                    if (columnMaxGroups != null)
+                    {
+                        b.AddAttribute(3, nameof(RadzenPivotColumn<SalesData>.MaxGroups), columnMaxGroups);
+                    }
+                    if (othersLabel != null)
+                    {
+                        b.AddAttribute(4, nameof(RadzenPivotColumn<SalesData>.OthersLabel), othersLabel);
+                    }
+                    b.CloseComponent();
+                });
+
+                parameters.Add<RenderFragment>(p => p.Aggregates, b =>
+                {
+                    b.OpenComponent<RadzenPivotAggregate<SalesData>>(0);
+                    b.AddAttribute(1, nameof(RadzenPivotAggregate<SalesData>.Property), nameof(SalesData.Amount));
+                    b.AddAttribute(2, nameof(RadzenPivotAggregate<SalesData>.Title), "Amount");
+                    b.AddAttribute(3, nameof(RadzenPivotAggregate<SalesData>.Aggregate), AggregateFunction.Sum);
+                    b.CloseComponent();
+                });
+
+                configure?.Invoke(parameters);
+            });
+        }
+
+        [Fact]
+        public void PivotDataGrid_MaxGroups_DoesNotCauseAdditionalSourceEnumeration()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var unlimited = new CountingEnumerable<SalesData>(AggregationData);
+            var limited = new CountingEnumerable<SalesData>(AggregationData);
+
+            var unlimitedGrid = RenderMaxGroupsGrid(ctx, data: unlimited.AsQueryable());
+            var limitedGrid = RenderMaxGroupsGrid(ctx, rowMaxGroups: 1, columnMaxGroups: 1, data: limited.AsQueryable());
+
+            unlimitedGrid.WaitForAssertion(() => Assert.NotEmpty(unlimitedGrid.FindAll("td.rz-pivot-value-cell")));
+            limitedGrid.WaitForAssertion(() => Assert.NotEmpty(limitedGrid.FindAll("td.rz-pivot-value-cell")));
+
+            Assert.True(unlimited.EnumerationCount > 0);
+            Assert.Equal(unlimited.EnumerationCount, limited.EnumerationCount);
+        }
+
+        [Fact]
         public void PivotDataGrid_IQueryableData_SourceEnumeratedLazilyAndNotPerCell()
         {
             using var ctx = new TestContext();
@@ -1661,4 +2194,3 @@ namespace Radzen.Blazor.Tests
         }
     }
 }
-

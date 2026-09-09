@@ -3,7 +3,7 @@
 Radzen Blazor Components
 ========================
 
-The most sophisticated free UI component library for Blazor, featuring **100+ native components**. MIT licensed, used by thousands of developers at companies like Microsoft, NASA, Porsche, Dell, Siemens, and DHL.
+The most sophisticated free UI component library for Blazor, featuring **145+ native components**. MIT licensed, used by thousands of developers at companies like Microsoft, NASA, Porsche, Dell, Siemens, and DHL.
 
 Supports .NET 10, Blazor Server, Blazor WebAssembly, and .NET MAUI Blazor Hybrid.
 
@@ -11,7 +11,7 @@ Supports .NET 10, Blazor Server, Blazor WebAssembly, and .NET MAUI Blazor Hybrid
 
 Star this repo ⭐ to support the project and help other Blazor developers discover it.
 
- [![GitHub Stars](https://img.shields.io/github/stars/radzenhq/radzen-blazor?logo=github&style=for-the-badge)](https://github.com/radzenhq/radzen-blazor/stargazers)[![License - MIT](https://img.shields.io/github/license/radzenhq/radzen-blazor?logo=github&style=for-the-badge)](https://github.com/radzenhq/radzen-blazor/blob/master/LICENSE)[![NuGet Downloads](https://img.shields.io/nuget/dt/Radzen.Blazor?color=%232694F9&label=nuget%20downloads&logo=nuget&style=for-the-badge) ](https://www.nuget.org/packages/Radzen.Blazor)[![GitHub Release](https://img.shields.io/github/v/release/radzenhq/radzen-blazor?logo=github&style=for-the-badge)](https://github.com/radzenhq/radzen-blazor/releases/latest)[![Release Date](https://img.shields.io/github/release-date/radzenhq/radzen-blazor?logo=github&style=for-the-badge)](https://github.com/radzenhq/radzen-blazor/releases)[![Github Contributors](https://img.shields.io/github/contributors/radzenhq/radzen-blazor?logo=github&style=for-the-badge) ](https://github.com/radzenhq/radzen-blazor/graphs/contributors)[![Radzen Blazor Components - Online Demos](https://img.shields.io/badge/demos-online-brightgreen?color=%232694F9&logo=blazor&style=for-the-badge) ](https://blazor.radzen.com)
+ [![GitHub Stars](https://img.shields.io/github/stars/radzenhq/radzen-blazor?logo=github&style=for-the-badge&cacheSeconds=14400)](https://github.com/radzenhq/radzen-blazor/stargazers)[![License - MIT](https://img.shields.io/github/license/radzenhq/radzen-blazor?logo=github&style=for-the-badge&cacheSeconds=14400)](https://github.com/radzenhq/radzen-blazor/blob/master/LICENSE)[![NuGet Downloads](https://img.shields.io/nuget/dt/Radzen.Blazor?color=%232694F9&label=nuget%20downloads&logo=nuget&style=for-the-badge) ](https://www.nuget.org/packages/Radzen.Blazor)[![GitHub Release](https://img.shields.io/github/v/release/radzenhq/radzen-blazor?logo=github&style=for-the-badge&cacheSeconds=14400)](https://github.com/radzenhq/radzen-blazor/releases/latest)[![Release Date](https://img.shields.io/github/release-date/radzenhq/radzen-blazor?logo=github&style=for-the-badge&cacheSeconds=14400)](https://github.com/radzenhq/radzen-blazor/releases)[![Github Contributors](https://img.shields.io/github/contributors/radzenhq/radzen-blazor?logo=github&style=for-the-badge&cacheSeconds=14400) ](https://github.com/radzenhq/radzen-blazor/graphs/contributors)[![Radzen Blazor Components - Online Demos](https://img.shields.io/badge/demos-online-brightgreen?color=%232694F9&logo=blazor&style=for-the-badge) ](https://blazor.radzen.com)
 
 ## Quick start
 
@@ -51,11 +51,11 @@ For the full setup guide including render modes and dialog/notification configur
 
 **AI** — AIChat, Chat, Markdown, SpeechToTextButton
 
-**Data** — DataGrid, DataList, PivotDataGrid, DataFilter, PickList, Pager, Tree, Scheduler, Gantt, Timeline, Charts (Line, Bar, Column, Area, Pie, Donut, Scatter, Bubble, Spider/Radar), SankeyDiagram, GaugeCharts (Radial, Linear, Arc)
+**Data** — DataGrid, DataList, PivotDataGrid, DataFilter, PickList, Pager, Tree, Scheduler, Gantt, Timeline, Spreadsheet, Charts (Line, Bar, Column, Area, Pie, Donut, Scatter, Bubble, Spider/Radar, BoxPlot, Bullet, Candlestick, OHLC, Pyramid, Funnel, Waterfall, HighLow, Range Area/Bar/Column, Step Line/Area, Stacked & Full-Stacked variants, Contour), Heatmap, Treemap, RangeNavigator, SankeyDiagram, GaugeCharts (Radial, Linear, Arc)
 
-**Forms** — TextBox, TextArea, Password, Numeric, Mask, DatePicker, TimePicker, ColorPicker, Dropdown, AutoComplete, ListBox, CheckBox, RadioButtonList, Switch, Slider, Rating, FileInput, SecurityCode, HtmlEditor
+**Forms** — TextBox, TextArea, Password, Numeric, Mask, DatePicker, TimePicker, ColorPicker, Dropdown, AutoComplete, ListBox, CheckBox, RadioButtonList, Switch, Slider, Rating, FileInput, Upload, SecurityCode, SignaturePad, HtmlEditor, Button, SplitButton, Login
 
-**Layout** — Card, Panel, Tabs, Accordion, Splitter, Steps, Dialog, Fieldset, Stack, Row/Column, Sidebar
+**Layout** — Card, Panel, Tabs, Accordion, Splitter, Tile Layout, Steps, Dialog, Fieldset, Stack, Row/Column, Sidebar, Carousel
 
 **Navigation** — Menu, ContextMenu, PanelMenu, Breadcrumb, Link, TreeView, FabMenu, ProfileMenu
 

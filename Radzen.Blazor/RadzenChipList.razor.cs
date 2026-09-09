@@ -4,6 +4,7 @@ using Radzen.Blazor.Rendering;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -13,6 +14,7 @@ namespace Radzen.Blazor
     /// Displays and manages a collection of chips with optional selection and removal.
     /// </summary>
     /// <typeparam name="TValue">The selected value type. Use IEnumerable for multiple selection mode.</typeparam>
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
     public partial class RadzenChipList<TValue> : FormComponent<TValue>, IRadzenChipList
     {
         /// <summary>
@@ -99,11 +101,13 @@ namespace Radzen.Blazor
         [Parameter]
         public ChipSize Size { get; set; } = ChipSize.Medium;
 
+        private string? removeChipTitle;
+
         /// <summary>
         /// Gets or sets the close button accessible title.
         /// </summary>
         [Parameter]
-        public string RemoveChipTitle { get; set; } = "Remove";
+        public string RemoveChipTitle { get => removeChipTitle ?? Localize(nameof(RadzenStrings.ChipList_RemoveChipTitle)); set => removeChipTitle = value; }
 
         /// <summary>
         /// Gets or sets the callback invoked when a chip remove action is requested.
@@ -138,7 +142,17 @@ namespace Radzen.Blazor
         protected override void OnParametersSet()
         {
             base.OnParametersSet();
+            // ShouldRender is skipped for the first render.
+            selection.Invalidate();
             UpdateAllItems();
+        }
+
+        /// <inheritdoc />
+        protected override bool ShouldRender()
+        {
+            // Bound collections may mutate in place between renders.
+            selection.Invalidate();
+            return base.ShouldRender();
         }
 
         /// <inheritdoc />
@@ -156,8 +170,8 @@ namespace Radzen.Blazor
             var dataItems = (Data != null ? Data.Cast<object>() : Enumerable.Empty<object>()).Select(i =>
             {
                 var item = new RadzenChipItem();
-                item.SetText($"{PropertyAccess.GetItemOrValueFromProperty(i, TextProperty ?? string.Empty)}");
-                item.SetValue(PropertyAccess.GetItemOrValueFromProperty(i, ValueProperty ?? string.Empty));
+                item.SetText($"{PropertyAccess.GetItemProperty(i, TextProperty)}");
+                item.SetValue(PropertyAccess.GetItemProperty(i, ValueProperty));
 
                 if (!string.IsNullOrEmpty(DisabledProperty) &&
                     PropertyAccess.TryGetItemOrValueFromProperty<bool>(i, DisabledProperty, out var disabledResult))
@@ -171,11 +185,18 @@ namespace Radzen.Blazor
             allItems = items.Concat(dataItems).Where(i => i.Visible).ToList();
         }
 
+        readonly SelectionMembership selection = new();
+
         internal bool IsSelected(RadzenChipItem item)
         {
             if (Multiple)
             {
-                return Value != null && ((IEnumerable)Value).Cast<object>().Any(v => Equals(v, item.Value));
+                if (Value == null)
+                {
+                    return false;
+                }
+
+                return selection.Contains(Value as IEnumerable, item.Value);
             }
 
             return Equals(Value, item.Value);
@@ -335,6 +356,7 @@ namespace Radzen.Blazor
         /// </summary>
         public void Refresh()
         {
+            selection.Invalidate();
             UpdateAllItems();
             StateHasChanged();
         }

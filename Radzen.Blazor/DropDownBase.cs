@@ -4,8 +4,10 @@ using Microsoft.JSInterop;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
+using Radzen.Blazor;
 
 namespace Radzen
 {
@@ -37,6 +39,9 @@ namespace Radzen
         List<object>? virtualItems;
         int virtualStartIndex;
 
+        internal int VirtualStartIndex => virtualStartIndex;
+
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
         private async ValueTask<Microsoft.AspNetCore.Components.Web.Virtualization.ItemsProviderResult<object>> LoadItems(Microsoft.AspNetCore.Components.Web.Virtualization.ItemsProviderRequest request)
         {
             var data = Data != null ? Data.Cast<object>() : Enumerable.Empty<object>();
@@ -165,18 +170,9 @@ namespace Radzen
             //
         }
 
-        HashSet<object> keys = new HashSet<object>();
-
         internal object? GetKey(object item)
         {
-            var value = GetItemOrValueFromProperty(item, ValueProperty ?? string.Empty);
-
-            if (value != null)
-            {
-                keys.Add(value);
-            }
-
-            return value;
+            return GetItemOrValueFromProperty(item, ValueProperty ?? string.Empty);
         }
 
         /// <summary>
@@ -249,33 +245,41 @@ namespace Radzen
         [Parameter]
         public string? DisabledProperty { get; set; }
 
+        private string? removeChipTitle;
+
         /// <summary>
         /// Gets or sets the remove chip button title.
         /// </summary>
         /// <value>The remove chip button title.</value>
         [Parameter]
-        public string RemoveChipTitle { get; set; } = "Remove";
+        public string RemoveChipTitle { get => removeChipTitle ?? Localize(nameof(RadzenStrings.DropDown_RemoveChipTitle)); set => removeChipTitle = value; }
+
+        private string? clearAriaLabel;
 
         /// <summary>
         /// Gets or sets the clear button aria label text.
         /// </summary>
         /// <value>The clear button aria label text.</value>
         [Parameter]
-        public string ClearAriaLabel { get; set; } = "Clear";
+        public string ClearAriaLabel { get => clearAriaLabel ?? Localize(nameof(RadzenStrings.DropDown_ClearAriaLabel)); set => clearAriaLabel = value; }
+
+        private string? searchAriaLabel;
 
         /// <summary>
         /// Gets or sets the search aria label text.
         /// </summary>
         /// <value>The search aria label text.</value>
         [Parameter]
-        public string SearchAriaLabel { get; set; } = "Search";
+        public string SearchAriaLabel { get => searchAriaLabel ?? Localize(nameof(RadzenStrings.DropDown_SearchAriaLabel)); set => searchAriaLabel = value; }
+
+        private string? emptyAriaLabel;
 
         /// <summary>
         /// Gets or sets the empty value aria label text.
         /// </summary>
         /// <value>The empty value aria label text.</value>
         [Parameter]
-        public string EmptyAriaLabel { get; set; } = "Empty";
+        public string EmptyAriaLabel { get => emptyAriaLabel ?? Localize(nameof(RadzenStrings.DropDown_EmptyAriaLabel)); set => emptyAriaLabel = value; }
 
         /// <summary>
         /// Gets or sets the selected item changed.
@@ -292,6 +296,8 @@ namespace Radzen
         /// The selected item
         /// </summary>
         protected object? selectedItem;
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2055, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
         Type GetItemType(IEnumerable items)
         {
             var firstType = items.Cast<object>().FirstOrDefault()?.GetType() ?? typeof(object);
@@ -308,6 +314,11 @@ namespace Radzen
         /// <summary>
         /// Selects all.
         /// </summary>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2072, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2075, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2080, Justification = TrimMessages.CollectionTypePreserved)]
         protected virtual async System.Threading.Tasks.Task SelectAll()
         {
             if (Disabled || View == null)
@@ -315,10 +326,14 @@ namespace Radzen
                 return;
             }
 
-            if (selectedItems.Count != View.Cast<object>().ToList().Where(i => disabledPropertyGetter == null || disabledPropertyGetter(i) as bool? != true).Count())
+            var enabledItems = View.Cast<object>()
+                .Where(i => disabledPropertyGetter == null || disabledPropertyGetter(i) as bool? != true)
+                .ToList();
+
+            if (selectedItems.Count != enabledItems.Count)
             {
                 selectedItems.Clear();
-                selectedItems = View.Cast<object>().ToList().Where(i => disabledPropertyGetter == null || disabledPropertyGetter(i) as bool? != true).ToHashSet(ItemComparer);
+                selectedItems = enabledItems.ToHashSet(ItemComparer);
             }
             else
             {
@@ -358,7 +373,7 @@ namespace Radzen
 
         internal bool IsAllSelected()
         {
-            List<object> notDisabledItemsInList = View != null ? View.Cast<object>().ToList()
+            List<object> notDisabledItemsInList = View != null ? View.Cast<object>()
                 .Where(i => disabledPropertyGetter == null || disabledPropertyGetter(i) as bool? != true)
                 .ToList() : new List<object>();
 
@@ -389,7 +404,9 @@ namespace Radzen
         protected async Task ClearAll()
         {
             if (Disabled)
+            {
                 return;
+            }
 
             searchText = null;
             _view = null;
@@ -400,6 +417,7 @@ namespace Radzen
             }
 
             internalValue = collectionAssignment.GetCleared();
+            selection.Invalidate();
             selectedItem = null;
 
             selectedItems.Clear();
@@ -448,9 +466,14 @@ namespace Radzen
         }
 
         /// <inheritdoc/>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
         protected override void OnParametersSet()
         {
             base.OnParametersSet();
+
+            // ShouldRender is skipped for the first render.
+            selection.Invalidate();
 
             if (_data != null)
             {
@@ -492,6 +515,10 @@ namespace Radzen
             }
         }
 
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2060, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2075, Justification = TrimMessages.DataTypePreserved)]
         Func<object, object?> GetGetter(string propertyName, Type type)
         {
             if (propertyName?.Contains('[', StringComparison.Ordinal) == true)
@@ -518,6 +545,7 @@ namespace Radzen
         internal Func<object, object?>? disabledPropertyGetter;
         internal Type? disabledPropertyGetterType;
 
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
         private object? GetItemOrValueFromPropertyUsingGetter(object item, string property, Func<object, object?>? getter, Type? getterType)
         {
             return getter != null && getterType?.IsInstanceOfType(item) == true ? getter(item) : PropertyAccess.GetItemOrValueFromProperty(item, property);
@@ -529,6 +557,7 @@ namespace Radzen
         /// <param name="item">The item.</param>
         /// <param name="property">The property.</param>
         /// <returns>System.Object.</returns>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
         public virtual object? GetItemOrValueFromProperty(object? item, string property)
         {
             if (item != null)
@@ -660,7 +689,9 @@ namespace Radzen
         protected virtual async System.Threading.Tasks.Task OpenPopup(string key = "ArrowDown", bool isFilter = false, bool isFromClick = false)
         {
             if (Disabled)
+            {
                 return;
+            }
 
             if (JSRuntime != null)
             {
@@ -693,6 +724,8 @@ namespace Radzen
         /// <param name="args">The <see cref="Microsoft.AspNetCore.Components.Web.KeyboardEventArgs"/> instance containing the event data.</param>
         /// <param name="isFilter">if set to <c>true</c> [is filter].</param>
         /// <param name="shouldSelectOnChange">Should select item on item change with keyboard.</param>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2072, Justification = TrimMessages.DataTypePreserved)]
         protected virtual async Task HandleKeyPress(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args, bool isFilter = false, bool? shouldSelectOnChange = null)
         {
             ArgumentNullException.ThrowIfNull(args);
@@ -700,7 +733,9 @@ namespace Radzen
             var key = args.Code != null ? args.Code : args.Key;
 
             if (Disabled || Data == null || args == null || key == null)
+            {
                 return;
+            }
 
             List<object> items = Enumerable.Empty<object>().ToList();
 
@@ -740,11 +775,17 @@ namespace Radzen
 
                             if (isDown)
                             {
-                                if (selectedIndex < virtualTotalCount - 1) selectedIndex++;
+                                if (selectedIndex < virtualTotalCount - 1)
+                                {
+                                    selectedIndex++;
+                                }
                             }
                             else
                             {
-                                if (selectedIndex > 0) selectedIndex--;
+                                if (selectedIndex > 0)
+                                {
+                                    selectedIndex--;
+                                }
                             }
 
                             await JSRuntime.InvokeVoidAsync("Radzen.focusVirtualListItem", list, selectedIndex, virtualTotalCount);
@@ -771,6 +812,43 @@ namespace Radzen
                 catch (Exception)
                 {
                     //
+                }
+            }
+            else if (key == "Home" || key == "End")
+            {
+                preventKeydown = true;
+
+                try
+                {
+                    if (JSRuntime != null)
+                    {
+                        if (useVirtualization)
+                        {
+                            selectedIndex = key == "Home" ? 0 : virtualTotalCount - 1;
+
+                            await JSRuntime.InvokeVoidAsync("Radzen.focusVirtualListItem", list, selectedIndex, virtualTotalCount);
+                        }
+                        else
+                        {
+                            selectedIndex = await JSRuntime.InvokeAsync<int>("Radzen.focusListItem", search, list, key == "Home", key == "Home" ? -1 : items.Count);
+                        }
+
+                        var popupOpened = await JSRuntime.InvokeAsync<bool>("Radzen.popupOpened", PopupID);
+
+                        if (!Multiple && !popupOpened && shouldSelectOnChange != false)
+                        {
+                            object? selectedItemToChange = useVirtualization
+                                ? View?.Cast<object>().AsQueryable().Skip(selectedIndex).FirstOrDefault()
+                                : items.ElementAtOrDefault(selectedIndex);
+                            if (selectedItemToChange != null)
+                            {
+                                await OnSelectItem(selectedItemToChange, true);
+                            }
+                        }
+                    }
+                }
+                catch (Exception)
+                {
                 }
             }
             else if (key == "Enter" || key == "NumpadEnter" || (key == "Space" && !isFilter))
@@ -816,7 +894,7 @@ namespace Radzen
 
                     if (!popupOpened)
                     {
-                        if (key != "Space")
+                        if (key != "Space" || !isFilter)
                         {
                             await OpenPopup(key, isFilter);
                         }
@@ -836,6 +914,12 @@ namespace Radzen
 
                 await OpenPopup(key, isFilter);
             }
+            else if (args.AltKey && key == "ArrowUp")
+            {
+                preventKeydown = true;
+
+                await ClosePopup(key);
+            }
             else if (key == "Escape" || key == "Tab")
             {
                 preventKeydown = false;
@@ -852,10 +936,22 @@ namespace Radzen
                     await OnSelectItem(null, true);
                 }
 
+                if (Multiple && !isFilter && selectedItems.Count > 0)
+                {
+                    selectedIndex = -1;
+                    await ClearAll();
+                }
+
                 if (AllowFiltering && isFilter)
                 {
                     Debounce(DebounceFilter, FilterDelay);
                 }
+            }
+            else if (args.CtrlKey && (key == "KeyA" || key == "a" || key == "A") && Multiple && AllowSelectAll)
+            {
+                preventKeydown = true;
+
+                await SelectAll();
             }
             else if (AllowFiltering && isFilter && FilterAsYouType && !(Multiple && key == "Space" && selectedIndex >= 0))
             {
@@ -966,6 +1062,7 @@ namespace Radzen
             if (JSRuntime != null)
             {
                 searchText = await JSRuntime.InvokeAsync<string>("Radzen.getInputValue", search) ?? string.Empty;
+                await InvokeAsync(() => SearchTextChanged.InvokeAsync(SearchText));
             }
 
             if (!LoadData.HasDelegate)
@@ -1004,12 +1101,15 @@ namespace Radzen
             }
 
             if (Multiple)
+            {
                 selectedIndex = -1;
+            }
+
             if (JSRuntime != null)
             {
+                await JSRuntime.InvokeVoidAsync("Radzen.updateActiveDescendant", list, null, -1);
                 await JSRuntime.InvokeAsync<string>("Radzen.repositionPopup", Element, PopupID);
             }
-            await InvokeAsync(() => SearchTextChanged.InvokeAsync(SearchText));
         }
 
         /// <summary>
@@ -1252,6 +1352,7 @@ namespace Radzen
         /// Gets the view.
         /// </summary>
         /// <value>The view.</value>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
         protected override IEnumerable? View
         {
             get
@@ -1310,6 +1411,10 @@ namespace Radzen
         /// </summary>
         /// <param name="item">The item.</param>
         /// <param name="raiseChange">if set to <c>true</c> [raise change].</param>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2072, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2075, Justification = TrimMessages.DataTypePreserved)]
         public async Task SelectItem(object? item, bool raiseChange = true)
         {
             if (disabledPropertyGetter != null && item != null && disabledPropertyGetter(item) as bool? == true)
@@ -1320,7 +1425,9 @@ namespace Radzen
             if (!Multiple)
             {
                 if (object.Equals(item, selectedItem))
+                {
                     return;
+                }
 
                 selectedItem = item;
                 if (!string.IsNullOrEmpty(ValueProperty) && item != null)
@@ -1423,6 +1530,7 @@ namespace Radzen
             return internalValue;
         }
 
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
         internal void UpdateSelectedItems(object item)
         {
             if (!string.IsNullOrEmpty(ValueProperty))
@@ -1451,6 +1559,8 @@ namespace Radzen
         /// Selects the item from value.
         /// </summary>
         /// <param name="value">The value.</param>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2072, Justification = TrimMessages.DataTypePreserved)]
         protected virtual void SelectItemFromValue(object? value)
         {
             var view = LoadData.HasDelegate ? Data : View;
@@ -1492,17 +1602,16 @@ namespace Radzen
                     {
                         if (!string.IsNullOrEmpty(ValueProperty))
                         {
-                            foreach (object v in values.Cast<dynamic>().ToList())
+                            if (typeof(EnumerableQuery).IsAssignableFrom(view.GetType()))
                             {
-                                dynamic item;
-
-                                if (typeof(EnumerableQuery).IsAssignableFrom(view.GetType()))
+                                AddSelectedItemsByValue(view, values);
+                            }
+                            else
+                            {
+                                // Non-in-memory (e.g. EF): keep the per-value query so the lookup stays server-side.
+                                foreach (object v in values.Cast<dynamic>().ToList())
                                 {
-                                    item = view.OfType<object>().Where(i => object.Equals(GetItemOrValueFromProperty(i, ValueProperty), v)).FirstOrDefault()!;
-                                }
-                                else
-                                {
-                                    item = view.AsQueryable().Where(new FilterDescriptor[]
+                                    dynamic item = view.AsQueryable().Where(new FilterDescriptor[]
                                     {
                                         new FilterDescriptor()
                                         {
@@ -1512,11 +1621,11 @@ namespace Radzen
                                     },
                                     LogicalFilterOperator.And,
                                     FilterCaseSensitivity.Default).FirstOrDefault()!;
-                                }
 
-                                if (!object.Equals(item, null) && !selectedItems.AsQueryable().Where(i => object.Equals(GetItemOrValueFromProperty(i, ValueProperty), v)).Any())
-                                {
-                                    selectedItems.Add(item);
+                                    if (!object.Equals(item, null) && !selectedItems.AsQueryable().Where(i => object.Equals(GetItemOrValueFromProperty(i, ValueProperty), v)).Any())
+                                    {
+                                        selectedItems.Add(item);
+                                    }
                                 }
                             }
                         }
@@ -1538,6 +1647,98 @@ namespace Radzen
         /// </summary>
         [Parameter] public IEqualityComparer<object>? ItemComparer { get; set; }
 
+        /// <summary>
+        /// Resolves each bound value against the in-memory <paramref name="source"/> and adds any not already selected, using a value-&gt;item lookup so a multiselect binding is O(items + selected) rather than O(items x selected). A value whose type differs from the item value type (e.g. an integer bound against an enum property) is coerced like the FilterDescriptor-based path does, and a null value selects the first item whose value is null. The non-in-memory (e.g. EF) path stays at each call site so its lookup remains server-side.
+        /// </summary>
+        private protected void AddSelectedItemsByValue(IEnumerable source, IEnumerable values)
+        {
+            var itemsByValue = new Dictionary<object, object>();
+            object? itemWithNullValue = null;
+            Type? itemValueType = null;
+            foreach (var i in source.OfType<object>())
+            {
+                var iv = GetItemOrValueFromProperty(i, ValueProperty!);
+                if (iv != null)
+                {
+                    itemsByValue.TryAdd(iv, i);
+                    itemValueType ??= iv.GetType();
+                }
+                else
+                {
+                    itemWithNullValue ??= i;
+                }
+            }
+
+            var existingValues = new HashSet<object>();
+            var nullValueSelected = false;
+            foreach (var si in selectedItems)
+            {
+                var sv = GetItemOrValueFromProperty(si, ValueProperty!);
+                if (sv != null)
+                {
+                    existingValues.Add(sv);
+                }
+                else
+                {
+                    nullValueSelected = true;
+                }
+            }
+
+            foreach (var v in values.Cast<object?>())
+            {
+                if (v == null)
+                {
+                    if (itemWithNullValue != null && !nullValueSelected)
+                    {
+                        nullValueSelected = true;
+                        selectedItems.Add(itemWithNullValue);
+                    }
+
+                    continue;
+                }
+
+                var key = itemsByValue.ContainsKey(v) ? v : CoerceValue(v, itemValueType);
+
+                if (key != null && itemsByValue.TryGetValue(key, out var item) && existingValues.Add(key))
+                {
+                    selectedItems.Add(item);
+                }
+            }
+        }
+
+        static object? CoerceValue(object value, Type? targetType)
+        {
+            if (targetType == null || targetType == value.GetType())
+            {
+                return null;
+            }
+
+            try
+            {
+                return targetType.IsEnum ? Enum.ToObject(targetType, value) :
+                    Convert.ChangeType(value, targetType, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (InvalidCastException)
+            {
+                return null;
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+            catch (OverflowException)
+            {
+                return null;
+            }
+        }
+
+        // Shared for repeated membership checks within one render.
+        readonly SelectionMembership selection = new();
+
         internal bool IsItemSelectedByValue(object v)
         {
             switch (internalValue)
@@ -1545,7 +1746,7 @@ namespace Radzen
                 case string s:
                     return object.Equals(s, v);
                 case IEnumerable enumerable:
-                    return enumerable.Cast<object>().Contains(v);
+                    return selection.Contains(enumerable, v);
                 case null:
                     return false;
                 default:
@@ -1554,17 +1755,29 @@ namespace Radzen
         }
 
         /// <inheritdoc />
+        protected override bool ShouldRender()
+        {
+            // Bound collections may mutate in place between renders.
+            selection.Invalidate();
+
+            return base.ShouldRender();
+        }
+
+        /// <inheritdoc />
         public override void Dispose()
         {
             base.Dispose();
-
-            keys.Clear();
 
             GC.SuppressFinalize(this);
         }
         
         private class DefaultCollectionAssignment
         {
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2055, Justification = TrimMessages.DataTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2067, Justification = TrimMessages.DataTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2080, Justification = TrimMessages.CollectionTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2090, Justification = TrimMessages.DataTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2091, Justification = TrimMessages.DataTypePreserved)]
             public virtual async Task MakeAssignment(IEnumerable selectedItems, EventCallback<T> valueChanged)
             {
                 if (typeof(IList).IsAssignableFrom(typeof(T)))
@@ -1633,6 +1846,11 @@ namespace Radzen
             private readonly System.Reflection.MethodInfo? addMethod;
             private readonly System.Reflection.MethodInfo? removeMethod;
 
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2055, Justification = TrimMessages.CollectionTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.CollectionTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2075, Justification = TrimMessages.CollectionTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2080, Justification = TrimMessages.CollectionTypePreserved)]
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2090, Justification = TrimMessages.CollectionTypePreserved)]
             public ReferenceGenericCollectionAssignment(T originalCollection)
             {
                 this.originalCollection = originalCollection;
@@ -1656,6 +1874,7 @@ namespace Radzen
                 }
             }
 
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.CollectionTypePreserved)]
             public override async Task MakeAssignment(IEnumerable selectedItems, EventCallback<T> valueChanged)
             {
                 if (!canHandle || originalCollection == null)
@@ -1670,17 +1889,22 @@ namespace Radzen
                 foreach (var i in currentItems)
                 {
                     if (!existingItems.Contains(i))
+                    {
                         addMethod!.Invoke(originalCollection, [i]);
+                    }
                 }
                 foreach (var i in existingItems)
                 {
                     if (!currentItems.Contains(i))
+                    {
                         removeMethod!.Invoke(originalCollection, [i]);
+                    }
                 }
 
                 await valueChanged.InvokeAsync(originalCollection);
             }
 
+            [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.CollectionTypePreserved)]
             public override T? GetCleared()
             {
                 if (canHandle && originalCollection != null)

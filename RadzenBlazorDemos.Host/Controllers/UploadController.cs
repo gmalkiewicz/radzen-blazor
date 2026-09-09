@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http;
+using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Hosting;
 using System;
@@ -17,7 +18,13 @@ namespace RadzenBlazorDemos
             this.environment = environment;
         }
 
-        [HttpPut("upload/stream")]
+        // SVG is excluded because it can carry script.
+        static readonly string[] AllowedImageExtensions =
+        {
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+        };
+
+        [HttpPut("api/upload/stream")]
         public async Task<IActionResult> Stream()
         {
             try
@@ -38,7 +45,7 @@ namespace RadzenBlazorDemos
             }
         }
         
-        [HttpPost("upload/single")]
+        [HttpPost("api/upload/single")]
         public IActionResult Single(IFormFile file)
         {
             try
@@ -52,7 +59,7 @@ namespace RadzenBlazorDemos
             }
         }
 
-        [HttpPost("upload/image")]
+        [HttpPost("api/upload/image")]
         public IActionResult Image(IFormFile file)
         {
             try
@@ -60,7 +67,14 @@ namespace RadzenBlazorDemos
                 // Used for demo purposes only
                 DeleteOldFiles();
 
-                var fileName = $"upload-{DateTime.Today.ToString("yyyy-MM-dd")}-{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+                var extension = Path.GetExtension(file.FileName);
+
+                if (!AllowedImageExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+                {
+                    return BadRequest("Only image files can be uploaded.");
+                }
+
+                var fileName = $"upload-{DateTime.Today.ToString("yyyy-MM-dd")}-{Guid.NewGuid()}{extension}";
 
                 using (var stream = new FileStream(Path.Combine(environment.WebRootPath, fileName), FileMode.Create))
                 {
@@ -99,7 +113,7 @@ namespace RadzenBlazorDemos
             }
         }
 
-        [HttpPost("upload/multiple")]
+        [HttpPost("api/upload/multiple")]
         public IActionResult Multiple(IFormFile[] files)
         {
             try
@@ -113,7 +127,7 @@ namespace RadzenBlazorDemos
             }
         }
 
-        [HttpPost("upload/custom-header")]
+        [HttpPost("api/upload/custom-header")]
         public IActionResult CustomHeader(IFormFile file)
         {
             try
@@ -129,7 +143,7 @@ namespace RadzenBlazorDemos
             }
         }
 
-        [HttpPost("upload/{id}")]
+        [HttpPost("api/upload/{id}")]
         public IActionResult Post(IFormFile[] files, int id, [FromQuery] string query)
         {
             try
@@ -142,7 +156,7 @@ namespace RadzenBlazorDemos
             }
         }
 
-        [HttpPost("upload/specific")]
+        [HttpPost("api/upload/specific")]
         public IActionResult Specific(IFormFile myName)
         {
             try

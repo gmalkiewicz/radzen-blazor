@@ -99,26 +99,29 @@ namespace Radzen.Blazor
 
             Value = newValue;
 
-            await ValueChanged.InvokeAsync(Value);
+            await ValueChanged.InvokeAsync(newValue);
 
-            if (FieldIdentifier.FieldName != null)
-            {
-                EditContext?.NotifyFieldChanged(FieldIdentifier);
-            }
+            NotifyFieldChanged(newValue);
 
-            await Change.InvokeAsync(Value);
+            await Change.InvokeAsync(newValue);
         }
+
+        /// <summary>
+        /// Gets or sets the size of the component.
+        /// </summary>
+        [Parameter]
+        public InputSize InputSize { get; set; } = InputSize.Medium;
 
         /// <inheritdoc />
         protected override string GetComponentCssClass()
         {
-            return GetClassList("rz-textbox").ToString();
+            return GetClassList("rz-textbox").AddInputSize(InputSize).ToString();
         }
 
         /// <inheritdoc />
         protected override string? GetId()
         {
-            return Name ?? base.GetId();
+            return GetIdAttribute() ?? Name ?? base.GetId();
         }
     }
 }

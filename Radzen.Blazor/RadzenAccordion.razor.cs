@@ -71,6 +71,15 @@ namespace Radzen.Blazor
         public AccordionRenderMode RenderMode { get; set; } = AccordionRenderMode.Server;
 
         /// <summary>
+        /// Gets or sets the ARIA heading level applied to each accordion header.
+        /// The header button is wrapped in an element with <c>role="heading"</c> and this <c>aria-level</c>
+        /// so screen-reader users can navigate the accordion by heading, as required by the WAI-ARIA Accordion pattern.
+        /// </summary>
+        /// <value>The heading level (typically 1-6). Default is 3.</value>
+        [Parameter]
+        public int AriaLevel { get; set; } = 3;
+
+        /// <summary>
         /// Gets or sets the zero-based index of the currently expanded item.
         /// Use with @bind-SelectedIndex for two-way binding to programmatically control which item is expanded.
         /// In multiple expand mode, this represents the last expanded item.
@@ -228,7 +237,10 @@ namespace Radzen.Blazor
         
         internal async System.Threading.Tasks.Task SelectItem(RadzenAccordionItem item, bool? value = null)
         {
-            if(item.Disabled) return;
+            if(item.Disabled)
+            {
+                return;
+            }
 
             if (RenderMode == AccordionRenderMode.Client && accordionJs != null && value == null)
             {
@@ -333,8 +345,9 @@ namespace Radzen.Blazor
         }
 
         IJSObjectReference? accordionJs;
+        int accordionJsVersion;
+        bool _visibleChanged;
         bool shouldRender = true;
-        bool renderModeNeedsInit;
 
         /// <inheritdoc />
         protected override bool ShouldRender()
@@ -347,21 +360,56 @@ namespace Radzen.Blazor
         {
             await base.OnAfterRenderAsync(firstRender);
 
-            if ((firstRender || renderModeNeedsInit) && RenderMode == AccordionRenderMode.Client && JSRuntime != null)
+            if ((firstRender || _visibleChanged) && JSRuntime != null)
             {
-                renderModeNeedsInit = false;
-                accordionJs = await JSRuntime.InvokeAsync<IJSObjectReference>(
-                    "Radzen.createAccordion", Element, Multiple);
+                _visibleChanged = false;
+
+                var version = ++accordionJsVersion;
+                var jsRef = accordionJs;
+                accordionJs = null;
+
+                if (jsRef != null)
+                {
+                    await jsRef.InvokeVoidAsync("dispose");
+                    await jsRef.DisposeAsync();
+                }
+
+                if (version != accordionJsVersion)
+                {
+                    return;
+                }
+
+                if (Visible)
+                {
+                    var created = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                        "Radzen.createAccordion", Element, Multiple);
+
+                    if (version == accordionJsVersion)
+                    {
+                        accordionJs = created;
+                    }
+                    else if (created != null)
+                    {
+                        await created.InvokeVoidAsync("dispose");
+                        await created.DisposeAsync();
+                    }
+                }
             }
         }
 
         internal async Task SelectItemOnClient(RadzenAccordionItem item)
         {
-            if (item.Disabled || accordionJs == null) return;
+            if (item.Disabled || accordionJs == null)
+            {
+                return;
+            }
 
             var visibleItems = items.Where(i => i.Visible).ToList();
             var visibleIndex = visibleItems.IndexOf(item);
-            if (visibleIndex < 0) return;
+            if (visibleIndex < 0)
+            {
+                return;
+            }
 
             var expanded = !item.GetSelected();
 
@@ -402,43 +450,47 @@ namespace Radzen.Blazor
             shouldRender = true;
         }
 
-        internal int focusedIndex = -1;
-        bool preventKeyPress = true;
+        bool preventKeyPress;
 
-        bool stopKeydownPropagation = true;
-        void OnGuardKeyDown(KeyboardEventArgs args)
+        async Task OnHeaderKeyDown(KeyboardEventArgs args, RadzenAccordionItem item)
         {
             var key = args.Code ?? args.Key;
-            stopKeydownPropagation = key != "Escape";
-        }
-        async Task OnKeyPress(KeyboardEventArgs args)
-        {
-            var key = args.Code != null ? args.Code : args.Key;
 
-            if (key == "ArrowUp" || key == "ArrowDown")
-            {
-                preventKeyPress = true;
-
-                focusedIndex = Math.Clamp(focusedIndex + (key == "ArrowUp" ? -1 : 1), 0, items.Count - 1);
-            }
-            else if (key == "Space" || key == "Enter")
-            {
-                preventKeyPress = true;
-
-                if (focusedIndex >= 0 && focusedIndex < items.Count)
-                {
-                    await SelectItem(items.Where(i => i.Visible).ElementAt(focusedIndex));
-                }
-            }
-            else
+            if (key != "ArrowDown" && key != "ArrowUp" && key != "Home" && key != "End")
             {
                 preventKeyPress = false;
+                return;
             }
-        }
 
-        internal bool IsFocused(RadzenAccordionItem item)
-        {
-            return items.Where(i => i.Visible).ToList().IndexOf(item) == focusedIndex && focusedIndex != -1;
+            preventKeyPress = true;
+
+            var navigable = items.Where(i => i.Visible && !i.Disabled).ToList();
+            var current = navigable.IndexOf(item);
+
+            if (current < 0)
+            {
+                return;
+            }
+
+            var target = key switch
+            {
+                "ArrowUp" => Math.Max(current - 1, 0),
+                "ArrowDown" => Math.Min(current + 1, navigable.Count - 1),
+                "Home" => 0,
+                "End" => navigable.Count - 1,
+                _ => current
+            };
+
+            if (target != current)
+            {
+                try
+                {
+                    await navigable[target].HeaderElement.FocusAsync(preventScroll: true);
+                }
+                catch (JSDisconnectedException)
+                {
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -446,43 +498,29 @@ namespace Radzen.Blazor
         {
             _itemRefreshPending = false;
 
-            if (parameters.DidParameterChange(nameof(Multiple), Multiple) && accordionJs != null)
+            if (parameters.DidParameterChange(nameof(Visible), Visible))
             {
-                await accordionJs.InvokeVoidAsync("setMultiple", parameters.GetValueOrDefault<bool>(nameof(Multiple)));
+                _visibleChanged = true;
             }
 
-            var renderModeChanged = parameters.DidParameterChange(nameof(RenderMode), RenderMode);
-            if (renderModeChanged)
+            var multipleChanged = parameters.DidParameterChange(nameof(Multiple), Multiple);
+            var selectedIndexChanged = parameters.DidParameterChange(nameof(SelectedIndex), SelectedIndex);
+
+            await base.SetParametersAsync(parameters);
+
+            if (multipleChanged && accordionJs != null)
             {
-                var newRenderMode = parameters.GetValueOrDefault<AccordionRenderMode>(nameof(RenderMode));
-
-                if (newRenderMode == AccordionRenderMode.Server && accordionJs != null)
-                {
-                    try { await accordionJs.InvokeVoidAsync("dispose"); } catch { }
-                    accordionJs = null;
-                }
-
-                renderModeNeedsInit = newRenderMode == AccordionRenderMode.Client && accordionJs == null;
+                await accordionJs.InvokeVoidAsync("setMultiple", Multiple);
             }
 
-            if (parameters.DidParameterChange(nameof(SelectedIndex), SelectedIndex))
+            if (selectedIndexChanged)
             {
-                var item = items.Where(i => i.Visible).ElementAtOrDefault(parameters.GetValueOrDefault<int>(nameof(SelectedIndex)));
+                var item = items.Where(i => i.Visible).ElementAtOrDefault(SelectedIndex);
                 if (item != null && !item.GetSelected())
                 {
                     await SelectItem(item);
                 }
             }
-
-            await base.SetParametersAsync(parameters);
-        }
-
-        /// <inheritdoc />
-        protected override void OnInitialized()
-        {
-            focusedIndex = focusedIndex == -1 ? 0 : focusedIndex;
-
-            base.OnInitialized();
         }
 
         /// <inheritdoc />
@@ -490,10 +528,11 @@ namespace Radzen.Blazor
         {
             base.Dispose();
 
-            if (accordionJs != null)
-            {
-                try { accordionJs.InvokeVoidAsync("dispose"); } catch { }
-            }
+            accordionJsVersion++;
+            var jsRef = accordionJs;
+            accordionJs = null;
+            jsRef?.InvokeVoid("dispose");
+            jsRef?.DisposeFireAndForget();
         }
     }
 }

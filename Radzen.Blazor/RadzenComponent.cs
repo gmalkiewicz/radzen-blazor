@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;
 using Microsoft.JSInterop;
 
@@ -85,6 +86,29 @@ namespace Radzen
         private CultureInfo? culture;
 
         /// <summary>
+        /// Gets or sets the culture used for localized UI strings.
+        /// If not set, uses the <see cref="DefaultUICulture"/> from a parent component or falls back to <see cref="CultureInfo.CurrentUICulture"/>.
+        /// </summary>
+        /// <value>The UI culture for string localization. Default is <see cref="CultureInfo.CurrentUICulture"/>.</value>
+        [Parameter]
+        public CultureInfo UICulture
+        {
+            get => uiCulture ?? DefaultUICulture ?? CultureInfo.CurrentUICulture;
+            set => uiCulture = value;
+        }
+
+        /// <summary>
+        /// Gets or sets the default UI culture cascaded from a parent component.
+        /// This allows setting a UI culture at the layout level that applies to all child Radzen components.
+        /// Child components can override this by setting their own UICulture property.
+        /// </summary>
+        /// <value>The cascaded default UI culture.</value>
+        [CascadingParameter(Name = nameof(DefaultUICulture))]
+        public CultureInfo? DefaultUICulture { get; set; }
+
+        private CultureInfo? uiCulture;
+
+        /// <summary>
         /// Raises <see cref="MouseEnter" />.
         /// </summary>
         public async Task OnMouseEnter()
@@ -142,12 +166,21 @@ namespace Radzen
         /// <returns>Returns the <c>id</c> attribute (if specified) or generates a random one.</returns>
         protected virtual string? GetId()
         {
+            return GetIdAttribute() ?? UniqueID;
+        }
+
+        /// <summary>
+        /// Gets the <c>id</c> attribute specified by the user via unmatched attributes.
+        /// </summary>
+        /// <returns>The <c>id</c> attribute value or <c>null</c> if it is not specified or empty.</returns>
+        protected string? GetIdAttribute()
+        {
             if (Attributes != null && Attributes.TryGetValue("id", out var id) && !string.IsNullOrEmpty(Convert.ToString(@id, Culture)))
             {
                 return $"{@id}";
             }
 
-            return UniqueID;
+            return null;
         }
 
         /// <summary>
@@ -182,6 +215,24 @@ namespace Radzen
         /// <value>The js runtime.</value>
         [Inject]
         protected IJSRuntime? JSRuntime { get; set; }
+
+        [Inject]
+        private IServiceProvider Services { get; set; } = default!;
+
+        private Localizer? localizer;
+
+        /// <summary>
+        /// Gets the localizer used for resolving UI strings.
+        /// </summary>
+        internal Localizer Localizer => localizer ??=
+            Services.GetService<Localizer>() ?? Localizer.Default;
+
+        /// <summary>
+        /// Returns a localized string for the specified key using the current <see cref="UICulture"/>.
+        /// </summary>
+        /// <param name="key">The resource key. Use <c>nameof(RadzenStrings.SomeKey)</c> for compile-time safety.</param>
+        /// <returns>The localized string.</returns>
+        public string Localize(string key) => Localizer.Get(key, UICulture);
 
         /// <summary>
         /// Gets or sets a value indicating whether <see cref="JSRuntime" /> is available.
@@ -325,19 +376,28 @@ namespace Radzen
         {
             if (IsJSRuntimeAvailable && JSRuntime != null && !string.IsNullOrEmpty(UniqueID))
             {
-                if (ContextMenu.HasDelegate)
+                try
                 {
-                    JSRuntime.InvokeVoid("Radzen.removeContextMenu", UniqueID);
-                }
+                    if (ContextMenu.HasDelegate)
+                    {
+                        JSRuntime.InvokeVoid("Radzen.removeContextMenu", UniqueID);
+                    }
 
-                if (MouseEnter.HasDelegate)
-                {
-                    JSRuntime.InvokeVoid("Radzen.removeMouseEnter", UniqueID);
-                }
+                    if (MouseEnter.HasDelegate)
+                    {
+                        JSRuntime.InvokeVoid("Radzen.removeMouseEnter", UniqueID);
+                    }
 
-                if (MouseLeave.HasDelegate)
+                    if (MouseLeave.HasDelegate)
+                    {
+                        JSRuntime.InvokeVoid("Radzen.removeMouseLeave", UniqueID);
+                    }
+                }
+                catch (JSDisconnectedException)
                 {
-                    JSRuntime.InvokeVoid("Radzen.removeMouseLeave", UniqueID);
+                }
+                catch (InvalidOperationException)
+                {
                 }
             }
         }
@@ -354,19 +414,28 @@ namespace Radzen
 
             if (IsJSRuntimeAvailable && JSRuntime != null && !string.IsNullOrEmpty(UniqueID))
             {
-                if (ContextMenu.HasDelegate)
+                try
                 {
-                    JSRuntime.InvokeVoid("Radzen.removeContextMenu", UniqueID);
-                }
+                    if (ContextMenu.HasDelegate)
+                    {
+                        JSRuntime.InvokeVoid("Radzen.removeContextMenu", UniqueID);
+                    }
 
-                if (MouseEnter.HasDelegate)
-                {
-                    JSRuntime.InvokeVoid("Radzen.removeMouseEnter", UniqueID);
-                }
+                    if (MouseEnter.HasDelegate)
+                    {
+                        JSRuntime.InvokeVoid("Radzen.removeMouseEnter", UniqueID);
+                    }
 
-                if (MouseLeave.HasDelegate)
+                    if (MouseLeave.HasDelegate)
+                    {
+                        JSRuntime.InvokeVoid("Radzen.removeMouseLeave", UniqueID);
+                    }
+                }
+                catch (JSDisconnectedException)
                 {
-                    JSRuntime.InvokeVoid("Radzen.removeMouseLeave", UniqueID);
+                }
+                catch (InvalidOperationException)
+                {
                 }
             }
 
@@ -386,18 +455,20 @@ namespace Radzen
 
                 if (!String.IsNullOrEmpty(Style))
                 {
-                    foreach (var pair in Style.Split(';'))
+                    foreach (var pair in Style.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
-                        var keyAndValue = pair.Split(':');
-                        if (keyAndValue.Length == 2)
+                        var colon = pair.IndexOf(':', StringComparison.Ordinal);
+                        if (colon > 0 && colon < pair.Length - 1)
                         {
-                            var key = keyAndValue[0].Trim();
-                            var value = keyAndValue[1].Trim();
+                            var key = pair.Substring(0, colon).TrimEnd();
+                            var value = pair.Substring(colon + 1).TrimStart();
 
-                            currentStyle[key] = value;
+                            if (key.Length > 0 && value.Length > 0)
+                            {
+                                currentStyle[key] = value;
+                            }
                         }
                     }
-
                 }
 
                 return currentStyle;

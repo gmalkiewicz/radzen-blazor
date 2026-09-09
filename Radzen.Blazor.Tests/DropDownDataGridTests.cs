@@ -106,6 +106,46 @@ namespace Radzen.Blazor.Tests
         }
 
         [Fact]
+        public void DropDownDataGrid_SearchInput_HasComboboxAriaAttributes()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<string> { "Item1", "Item2" };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<string>>(parameters =>
+            {
+                parameters.Add(p => p.AllowFiltering, true);
+                parameters.Add(p => p.Data, data);
+            });
+
+            var searchInput = component.Find("input.rz-lookup-search-input");
+            var grid = component.Find("div[role='grid']");
+
+            Assert.Equal("combobox", searchInput.GetAttribute("role"));
+            Assert.Equal(grid.Id, searchInput.GetAttribute("aria-controls"));
+            Assert.Equal("grid", searchInput.GetAttribute("aria-haspopup"));
+            Assert.Equal("list", searchInput.GetAttribute("aria-autocomplete"));
+            Assert.NotNull(searchInput.GetAttribute("aria-expanded"));
+        }
+
+        [Fact]
+        public void DropDownDataGrid_EmbeddedGrid_IsNotTabbable()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<string> { "Item1", "Item2" };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<string>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data);
+            });
+
+            var grid = component.Find("div[role='grid']");
+
+            Assert.Equal("-1", grid.GetAttribute("tabindex"));
+        }
+
+        [Fact]
         public void DropDownDataGrid_Renders_Placeholder()
         {
             using var ctx = new TestContext();
@@ -225,6 +265,68 @@ namespace Radzen.Blazor.Tests
 
             var wrapper = component.Find(".rz-dropdown-chips-wrapper");
             Assert.Equal("Company1,Company2", wrapper.GetAttribute("title"));
+        }
+
+        [Fact]
+        public void DropDownDataGrid_Multiple_DoesNotDuplicateItemsForRepeatedBoundValues()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<Customer>
+            {
+                new Customer { Id = 1, CompanyName = "Company1" },
+                new Customer { Id = 2, CompanyName = "Company2" },
+                new Customer { Id = 3, CompanyName = "Company3" }
+            };
+            // A value repeated in the bound collection must map to its item exactly once.
+            var selectedItems = new List<int> { 1, 1, 2 };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<IEnumerable<int>>>(parameters =>
+            {
+                parameters.Add(p => p.Multiple, true);
+                parameters.Add(p => p.Chips, true);
+                parameters.Add(p => p.TextProperty, "CompanyName");
+                parameters.Add(p => p.ValueProperty, "Id");
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.Value, selectedItems);
+            });
+
+            var wrapper = component.Find(".rz-dropdown-chips-wrapper");
+            Assert.Equal("Company1,Company2", wrapper.GetAttribute("title"));
+        }
+
+        enum CustomerRating { Bronze = 1, Silver = 2, Gold = 3 }
+
+        class RatedCustomer
+        {
+            public string CompanyName { get; set; }
+            public CustomerRating Rating { get; set; }
+        }
+
+        [Fact]
+        public void DropDownDataGrid_Multiple_ResolvesEnumValuePropertyFromIntegerValues()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<RatedCustomer>
+            {
+                new RatedCustomer { CompanyName = "Company1", Rating = CustomerRating.Bronze },
+                new RatedCustomer { CompanyName = "Company2", Rating = CustomerRating.Silver },
+                new RatedCustomer { CompanyName = "Company3", Rating = CustomerRating.Gold }
+            };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<IEnumerable<int>>>(parameters =>
+            {
+                parameters.Add(p => p.Multiple, true);
+                parameters.Add(p => p.Chips, true);
+                parameters.Add(p => p.TextProperty, "CompanyName");
+                parameters.Add(p => p.ValueProperty, "Rating");
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.Value, new List<int> { 1, 3 });
+            });
+
+            var wrapper = component.Find(".rz-dropdown-chips-wrapper");
+            Assert.Equal("Company1,Company3", wrapper.GetAttribute("title"));
         }
 
         [Fact]
@@ -451,6 +553,147 @@ namespace Radzen.Blazor.Tests
             component.Find(".rz-lookup-search-input").Change("foo");
 
             Assert.Contains(loadDataCalls, c => c.Filter == "foo");
+        }
+
+        [Fact]
+        public void DropDownDataGrid_Forwards_IsLoading_ToInnerDataGrid()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<string> { "Item1", "Item2" };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<string>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.IsLoading, true);
+            });
+
+            Assert.Contains("rz-datatable-loading", component.Markup);
+        }
+
+        [Fact]
+        public void DropDownDataGrid_Forwards_LoadingTemplate_ToInnerDataGrid()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<string> { "Item1", "Item2" };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<string>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.IsLoading, true);
+                parameters.Add(p => p.LoadingTemplate, b => b.AddMarkupContent(0, "<span class=\"loading-marker\">Loading...</span>"));
+            });
+
+            Assert.Contains("loading-marker", component.Markup);
+        }
+
+        [Fact]
+        public void DropDownDataGrid_OpenOnFocus_FocusThenClick_OpensPopupOnce()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<Customer>
+            {
+                new Customer { Id = 1, CompanyName = "Acme Corp" }
+            };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<int>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.TextProperty, "CompanyName");
+                parameters.Add(p => p.ValueProperty, "Id");
+                parameters.Add(p => p.OpenOnFocus, true);
+            });
+
+            var root = component.Find("div.rz-dropdown");
+            root.Focus(new Microsoft.AspNetCore.Components.Web.FocusEventArgs());
+            root.Click();
+
+            Assert.Equal(1, ctx.JSInterop.Invocations.Count(i => i.Identifier == "Radzen.openPopup"));
+            Assert.Equal(0, ctx.JSInterop.Invocations.Count(i => i.Identifier == "Radzen.closePopup"));
+        }
+
+        [Fact]
+        public void DropDownDataGrid_OpenOnFocus_ClickWhileOpen_ClosesPopup()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<Customer>
+            {
+                new Customer { Id = 1, CompanyName = "Acme Corp" }
+            };
+
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<int>>(parameters =>
+            {
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.TextProperty, "CompanyName");
+                parameters.Add(p => p.ValueProperty, "Id");
+                parameters.Add(p => p.OpenOnFocus, true);
+            });
+
+            var root = component.Find("div.rz-dropdown");
+            root.Focus(new Microsoft.AspNetCore.Components.Web.FocusEventArgs());
+            root.Click();
+            root.Click();
+
+            Assert.Equal(1, ctx.JSInterop.Invocations.Count(i => i.Identifier == "Radzen.openPopup"));
+            Assert.Equal(1, ctx.JSInterop.Invocations.Count(i => i.Identifier == "Radzen.closePopup"));
+        }
+
+        [Fact]
+        public void DropDownDataGrid_Multiple_CtrlA_SelectsAllItems()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<Customer>
+            {
+                new Customer { Id = 1, CompanyName = "Acme Corp" },
+                new Customer { Id = 2, CompanyName = "Tech Inc" }
+            };
+
+            IEnumerable<int> value = null;
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<IEnumerable<int>>>(parameters =>
+            {
+                parameters.Add(p => p.Multiple, true);
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.TextProperty, "CompanyName");
+                parameters.Add(p => p.ValueProperty, "Id");
+                parameters.Add(p => p.ValueChanged, v => value = v);
+            });
+
+            var root = component.Find("div.rz-dropdown");
+            root.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "a", Code = "KeyA", CtrlKey = true });
+
+            Assert.Equal(new[] { 1, 2 }, value);
+        }
+
+        [Fact]
+        public void DropDownDataGrid_Multiple_CtrlA_DoesNothingWhenSelectAllNotAllowed()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            var data = new List<Customer>
+            {
+                new Customer { Id = 1, CompanyName = "Acme Corp" },
+                new Customer { Id = 2, CompanyName = "Tech Inc" }
+            };
+
+            IEnumerable<int> value = null;
+            var component = ctx.RenderComponent<RadzenDropDownDataGrid<IEnumerable<int>>>(parameters =>
+            {
+                parameters.Add(p => p.Multiple, true);
+                parameters.Add(p => p.AllowSelectAll, false);
+                parameters.Add(p => p.Data, data);
+                parameters.Add(p => p.TextProperty, "CompanyName");
+                parameters.Add(p => p.ValueProperty, "Id");
+                parameters.Add(p => p.ValueChanged, v => value = v);
+            });
+
+            var root = component.Find("div.rz-dropdown");
+            root.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "a", Code = "KeyA", CtrlKey = true });
+
+            Assert.Null(value);
         }
     }
 }

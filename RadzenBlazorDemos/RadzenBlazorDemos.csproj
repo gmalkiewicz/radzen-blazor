@@ -4,7 +4,7 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Radzen.Blazor" Version="*" Condition="'$(Configuration)' == 'Release'" />
+    <PackageReference Include="Radzen.Blazor" Version="*" GeneratePathProperty="true" Condition="'$(Configuration)' == 'Release'" />
     <ProjectReference Include="..\Radzen.Blazor\Radzen.Blazor.csproj" Condition="'$(Configuration)' != 'Release'" />
     <ProjectReference Include="..\Radzen.Blazor.Api\Radzen.Blazor.Api.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.*-*" />
@@ -18,6 +18,9 @@
   <ItemGroup>
     <!-- Workaround for .NET 10 antiforgery token issue - https://github.com/dotnet/aspnetcore/issues/64693 -->
     <TrimmerRootDescriptor Include="linker.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Localization/RadzenTranslations.json" />
   </ItemGroup>
   <ItemGroup>
     <BlazorWebAssemblyLazyLoad Include="Microsoft.CodeAnalysis.dll" />
@@ -69,8 +72,6 @@
       <LlmsTxtToolDir>$(MSBuildThisFileDirectory)..\RadzenBlazorDemos.Tools\bin\$(Configuration)\net10.0\</LlmsTxtToolDir>
       <LlmsTxtToolExe Condition="'$(OS)' == 'Windows_NT'">$(LlmsTxtToolDir)RadzenBlazorDemos.Tools.exe</LlmsTxtToolExe>
       <LlmsTxtToolExe Condition="'$(OS)' != 'Windows_NT'">$(LlmsTxtToolDir)RadzenBlazorDemos.Tools</LlmsTxtToolExe>
-      <RadzenBlazorXmlDoc>$(MSBuildThisFileDirectory)..\Radzen.Blazor\bin\$(Configuration)\net8.0\Radzen.Blazor.xml</RadzenBlazorXmlDoc>
-      <RadzenBlazorSourceDir>$(MSBuildThisFileDirectory)..\Radzen.Blazor\</RadzenBlazorSourceDir>
     </PropertyGroup>
     
     <Message Text="Generating llms.txt and component .md files..." Importance="high" />
@@ -80,8 +81,8 @@
           ContinueOnError="false"
           Condition="Exists('$(LlmsTxtToolPath)')" />
     
-    <!-- Run the tool: <outputDir> <pagesPath> <exampleServicePath> [xmlDocPath] [sourceDir] -->
-    <Exec Command="&quot;$(LlmsTxtToolExe)&quot; &quot;$(LlmsTxtOutputDir)&quot; &quot;$(ProjectDir)Pages&quot; &quot;$(ProjectDir)Services\ExampleService.cs&quot; &quot;$(RadzenBlazorXmlDoc)&quot; &quot;$(RadzenBlazorSourceDir)&quot;"
+    <!-- Run the tool: <outputDir> <pagesPath> <exampleServicePath>. API reference twins under <outputDir>/md/docs/api come from the Radzen.Blazor.Api build and must exist first. -->
+    <Exec Command="&quot;$(LlmsTxtToolExe)&quot; &quot;$(LlmsTxtOutputDir)&quot; &quot;$(ProjectDir)Pages&quot; &quot;$(ProjectDir)Services\ExampleService.cs&quot;"
           ContinueOnError="false"
           Condition="Exists('$(LlmsTxtToolExe)')" />
     

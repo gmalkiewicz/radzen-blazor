@@ -5,6 +5,7 @@ using Radzen.Blazor;
 using Radzen.Blazor.Rendering;
 using System;
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
@@ -19,6 +20,10 @@ namespace Radzen
     /// <typeparam name="T"></typeparam>
     /// <seealso cref="Radzen.RadzenComponent" />
     /// <seealso cref="Radzen.IRadzenFormComponent" />
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2067, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2072, Justification = TrimMessages.DataTypePreserved)]
     public class DataBoundFormComponent<T> : RadzenComponent, IRadzenFormComponent
     {
         /// <summary>
@@ -78,6 +83,20 @@ namespace Radzen
         public EventCallback<Radzen.LoadDataArgs> LoadData { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether this instance loading indicator is shown.
+        /// </summary>
+        /// <value><c>true</c> if this instance loading indicator is shown; otherwise, <c>false</c>.</value>
+        [Parameter]
+        public bool IsLoading { get; set; }
+
+        /// <summary>
+        /// Gets or sets the loading template shown while <see cref="IsLoading"/> is <c>true</c>.
+        /// </summary>
+        /// <value>The loading template.</value>
+        [Parameter]
+        public RenderFragment? LoadingTemplate { get; set; }
+
+        /// <summary>
         /// The form
         /// </summary>
         IRadzenForm? form;
@@ -124,7 +143,9 @@ namespace Radzen
                 }
 
                 if (!value.Equals(_value))
+                {
                     _value = value;
+                }
             }
         }
 
@@ -382,6 +403,31 @@ namespace Radzen
         public virtual object? GetValue()
         {
             return Value;
+        }
+
+        /// <summary>
+        /// Notifies the <see cref="EditContext"/> that the field has changed while validators observe the specified value.
+        /// The stored value is restored afterwards so that two-way binding parameter re-flow keeps working as expected.
+        /// </summary>
+        /// <param name="value">The value validators should observe during the notification.</param>
+        protected void NotifyFieldChanged(T? value)
+        {
+            if (FieldIdentifier.FieldName == null || EditContext == null)
+            {
+                return;
+            }
+
+            var current = _value;
+            _value = value;
+
+            try
+            {
+                EditContext.NotifyFieldChanged(FieldIdentifier);
+            }
+            finally
+            {
+                _value = current;
+            }
         }
 
 

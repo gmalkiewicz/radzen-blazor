@@ -53,12 +53,14 @@ namespace Radzen.Blazor
         [Parameter]
         public RenderFragment? ButtonContent { get; set; }
 
+        private string? imageAlternateText;
+
         /// <summary>
         /// Gets or sets the text.
         /// </summary>
         /// <value>The text.</value>
         [Parameter]
-        public string ImageAlternateText { get; set; } = "image";
+        public string ImageAlternateText { get => imageAlternateText ?? Localize(nameof(RadzenStrings.SplitButton_ImageAlternateText)); set => imageAlternateText = value; }
 
         /// <summary>
         /// Gets or sets the text.
@@ -150,11 +152,13 @@ namespace Radzen.Blazor
         [Parameter]
         public bool AlwaysOpenPopup { get; set; }
 
+        private string? openAriaLabel;
+
         /// <summary>
         /// Gets or sets the open button aria-label attribute.
         /// </summary>
         [Parameter]
-        public string OpenAriaLabel { get; set; } = "Open";
+        public string OpenAriaLabel { get => openAriaLabel ?? Localize(nameof(RadzenStrings.SplitButton_OpenAriaLabel)); set => openAriaLabel = value; }
 
         /// <summary>
         /// Gets or sets the icon of the drop down.
@@ -195,10 +199,27 @@ namespace Radzen.Blazor
                 {
                     if (AlwaysOpenPopup)
                     {
-                        await JSRuntime.InvokeVoidAsync("Radzen.togglePopup", Element, PopupID);
+                        IsOpen = !IsOpen;
+
+                        if (IsOpen)
+                        {
+                            if (focusedIndex == -1 && items.Count > 0)
+                            {
+                                focusedIndex = 0;
+                            }
+
+                            await JSRuntime.InvokeVoidAsync("Radzen.openPopup", Element, PopupID, false, null, null, null, Reference, nameof(OnPopupClose));
+                            await JSRuntime.InvokeVoidAsync("Radzen.focusElement", MenuId);
+                        }
+                        else
+                        {
+                            await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
+                        }
                     }
                     else
                     {
+                        IsOpen = false;
+
                         await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
                         await Click.InvokeAsync(null);
                     }
@@ -206,11 +227,51 @@ namespace Radzen.Blazor
             }
         }
 
+        async Task OnToggleClick()
+        {
+            if (Disabled)
+            {
+                return;
+            }
+
+            IsOpen = !IsOpen;
+
+            if (JSRuntime != null)
+            {
+                if (IsOpen)
+                {
+                    if (focusedIndex == -1 && items.Count > 0)
+                    {
+                        focusedIndex = 0;
+                    }
+
+                    await JSRuntime.InvokeVoidAsync("Radzen.openPopup", Element, PopupID, false, null, null, null, Reference, nameof(OnPopupClose));
+                    await JSRuntime.InvokeVoidAsync("Radzen.focusElement", MenuId);
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Called from JavaScript when the popup is closed client-side, e.g. by clicking outside of it.
+        /// </summary>
+        [JSInvokable("OnPopupClose")]
+        public void OnPopupClose()
+        {
+            IsOpen = false;
+            StateHasChanged();
+        }
+
         /// <summary>
         /// Closes this instance popup.
         /// </summary>
         public void Close()
         {
+            IsOpen = false;
+
             if (JSRuntime != null)
             {
                 JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
@@ -229,6 +290,10 @@ namespace Radzen.Blazor
             }
         }
 
+        private string MenuId => $"{GetId()}-menu";
+
+        private string ToggleButtonId => $"{GetId()}-toggle";
+
         string ButtonClass => ClassList.Create("rz-button")
                                        .AddButtonSize(Size)
                                        .AddVariant(Variant)
@@ -246,20 +311,51 @@ namespace Radzen.Blazor
                                             .AddDisabled(IsDisabled)
                                             .ToString();
 
-        private string OpenPopupScript()
-        {
-            if (Disabled)
-            {
-                return string.Empty;
-            }
-
-            return $"Radzen.togglePopup(this.parentNode, '{PopupID}')";
-        }
+        string PopupMenuClass => ClassList.Create("rz-splitbutton-menu")
+                                          .Add(Size switch
+                                          {
+                                              ButtonSize.ExtraSmall => "rz-input-xs",
+                                              ButtonSize.Small => "rz-input-sm",
+                                              ButtonSize.Large => "rz-input-lg",
+                                              _ => "rz-input-md",
+                                          })
+                                          .ToString();
 
         /// <inheritdoc />
         protected override string GetComponentCssClass()
         {
             return Disabled ? "rz-splitbutton rz-buttonset rz-state-disabled" : "rz-splitbutton rz-buttonset";
+        }
+
+        bool _visibleChanged;
+
+        /// <inheritdoc />
+        public override async Task SetParametersAsync(ParameterView parameters)
+        {
+            if (parameters.DidParameterChange(nameof(Visible), Visible))
+            {
+                _visibleChanged = true;
+            }
+
+            await base.SetParametersAsync(parameters);
+        }
+
+        /// <inheritdoc />
+        protected override async Task OnAfterRenderAsync(bool firstRender)
+        {
+            await base.OnAfterRenderAsync(firstRender);
+
+            if ((firstRender || _visibleChanged) && JSRuntime != null)
+            {
+                _visibleChanged = false;
+
+                if (!Visible)
+                {
+                    IsOpen = false;
+
+                    await JSRuntime.InvokeVoidAsync("Radzen.destroyPopup", PopupID);
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -276,22 +372,77 @@ namespace Radzen.Blazor
         }
 
         internal int focusedIndex = -1;
-        bool preventKeyPress = true;
+        bool preventKeyPress;
         bool stopKeydownPropagation;
-        async Task OnKeyPress(KeyboardEventArgs args)
+
+        async Task Open(int index)
+        {
+            focusedIndex = items.Count > 0 ? Math.Clamp(index, 0, items.Count - 1) : -1;
+
+            IsOpen = true;
+
+            if (JSRuntime != null)
+            {
+                await JSRuntime.InvokeVoidAsync("Radzen.openPopup", Element, PopupID, false, null, null, null, Reference, nameof(OnPopupClose));
+                await JSRuntime.InvokeVoidAsync("Radzen.focusElement", MenuId);
+            }
+        }
+
+        async Task OnToggleKeyDown(KeyboardEventArgs args)
         {
             var key = args.Code != null ? args.Code : args.Key;
 
-            if (args.AltKey && key == "ArrowDown")
+            if (!IsOpen && (key == "ArrowDown" || key == "ArrowUp") && items.Count > 0)
             {
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
 
-                focusedIndex = focusedIndex == -1 ? 0 : focusedIndex;
+                await Open(key == "ArrowDown" ? 0 : items.Count - 1);
+            }
+            else if (IsOpen && key == "Escape")
+            {
+                preventKeyPress = true;
+                stopKeydownPropagation = true;
 
-                if (JSRuntime != null)
+                await CloseAndFocusToggle();
+            }
+            else
+            {
+                preventKeyPress = false;
+                stopKeydownPropagation = false;
+            }
+        }
+
+        async Task CloseAndFocusToggle()
+        {
+            Close();
+
+            if (JSRuntime != null)
+            {
+                await JSRuntime.InvokeVoidAsync("Radzen.focusElement", ToggleButtonId);
+            }
+        }
+
+        async Task OnMenuKeyDown(KeyboardEventArgs args)
+        {
+            var key = args.Code != null ? args.Code : args.Key;
+
+            if (!IsOpen)
+            {
+                preventKeyPress = false;
+                stopKeydownPropagation = false;
+
+                return;
+            }
+
+            if (key == "Home" || key == "End")
+            {
+                preventKeyPress = true;
+                stopKeydownPropagation = true;
+
+                if (items.Count > 0)
                 {
-                    await JSRuntime.InvokeVoidAsync("Radzen.togglePopup", Element, PopupID);
+                    focusedIndex = key == "Home" ? 0 : items.Count - 1;
                 }
             }
             else if (key == "ArrowUp" || key == "ArrowDown")
@@ -301,7 +452,7 @@ namespace Radzen.Blazor
 
                 focusedIndex = Math.Clamp(focusedIndex + (key == "ArrowUp" ? -1 : 1), 0, items.Count - 1);
             }
-            else if (key == "Space" || key == "Enter")
+            else if (key == "Space" || key == "Enter" || key == "NumpadEnter")
             {
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
@@ -310,9 +461,10 @@ namespace Radzen.Blazor
                 {
                     await items[focusedIndex].OnClick(new MouseEventArgs());
                 }
-                else
+
+                if (JSRuntime != null)
                 {
-                    await OnClick(new MouseEventArgs());
+                    await JSRuntime.InvokeVoidAsync("Radzen.focusElement", ToggleButtonId);
                 }
             }
             else if (key == "Escape")
@@ -320,7 +472,14 @@ namespace Radzen.Blazor
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
 
-                Close();
+                await CloseAndFocusToggle();
+            }
+            else if (args.Key != null && args.Key.Length == 1 && !args.AltKey && !args.CtrlKey && !args.MetaKey && !char.IsControl(args.Key[0]))
+            {
+                preventKeyPress = true;
+                stopKeydownPropagation = true;
+
+                TypeAhead(args.Key);
             }
             else
             {
@@ -329,9 +488,52 @@ namespace Radzen.Blazor
             }
         }
 
+        void TypeAhead(string character)
+        {
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            var start = focusedIndex < 0 ? 0 : (focusedIndex + 1) % items.Count;
+
+            for (var i = 0; i < items.Count; i++)
+            {
+                var index = (start + i) % items.Count;
+                var item = items[index];
+
+                if (!item.Disabled && !string.IsNullOrEmpty(item.Text) && item.Text.StartsWith(character, StringComparison.OrdinalIgnoreCase))
+                {
+                    focusedIndex = index;
+                    return;
+                }
+            }
+        }
+
         internal bool IsFocused(RadzenSplitButtonItem item)
         {
             return items?.IndexOf(item) == focusedIndex && focusedIndex != -1;
+        }
+
+        internal bool IsOpen { get; private set; }
+
+        internal string ItemId(RadzenSplitButtonItem item)
+        {
+            var index = items?.IndexOf(item) ?? -1;
+            return $"{GetId()}-item-{index}";
+        }
+
+        internal string? ActiveDescendantId
+        {
+            get
+            {
+                if (IsOpen && focusedIndex >= 0 && focusedIndex < items.Count)
+                {
+                    return $"{GetId()}-item-{focusedIndex}";
+                }
+
+                return null;
+            }
         }
 
         List<RadzenSplitButtonItem> items = new List<RadzenSplitButtonItem>();
@@ -367,10 +569,12 @@ namespace Radzen.Blazor
             return GetId();
         }
 
+        private string? buttonAriaLabel;
+
         /// <summary>
         /// Gets or sets the add button aria-label attribute.
         /// </summary>
         [Parameter]
-        public string ButtonAriaLabel { get; set; } = "Button";
+        public string ButtonAriaLabel { get => buttonAriaLabel ?? Localize(nameof(RadzenStrings.SplitButton_ButtonAriaLabel)); set => buttonAriaLabel = value; }
     }
 }

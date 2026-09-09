@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Threading.Tasks;
 
@@ -11,6 +12,8 @@ namespace Radzen.Blazor
     /// Base component for RadzenPivotDataGrid Rows, Columns and Aggregates.
     /// </summary>
     /// <typeparam name="TItem">The type of the PivotDataGrid item.</typeparam>
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2087, Justification = TrimMessages.DataTypePreserved)]
     public partial class RadzenPivotField<TItem> : ComponentBase, IDisposable
     {
         /// <summary>
@@ -466,8 +469,12 @@ namespace Radzen.Blazor
         /// <returns>A Task representing the asynchronous operation.</returns>
         public override async Task SetParametersAsync(ParameterView parameters)
         {
+            var pivotGrid = PivotGrid;
+            var filterChanged = false;
+
             if (parameters.DidParameterChange(nameof(FilterValue), FilterValue))
             {
+                internalFilterValue = null;
                 filterValue = parameters.GetValueOrDefault<object>(nameof(FilterValue));
 
                 if (FilterTemplate != null || FilterValueTemplate != null)
@@ -480,10 +487,13 @@ namespace Radzen.Blazor
 
                     return;
                 }
+
+                filterChanged = true;
             }
 
             if (parameters.DidParameterChange(nameof(SecondFilterValue), SecondFilterValue))
             {
+                internalSecondFilterValue = null;
                 secondFilterValue = parameters.GetValueOrDefault<object>(nameof(SecondFilterValue));
 
                 if (FilterTemplate != null || SecondFilterValueTemplate != null)
@@ -496,6 +506,8 @@ namespace Radzen.Blazor
 
                     return;
                 }
+
+                filterChanged = true;
             }
 
             if (filterOperator == null && (parameters.DidParameterChange(nameof(FilterOperator), FilterOperator) || _filterOperator != null))
@@ -519,6 +531,12 @@ namespace Radzen.Blazor
             }
 
             await base.SetParametersAsync(parameters);
+
+            // Reload after applying parameters so the pivot uses the new filter values.
+            if (filterChanged && pivotGrid != null)
+            {
+                await pivotGrid.Reload();
+            }
         }
     }
-} 
+}

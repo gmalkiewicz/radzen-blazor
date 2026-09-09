@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Web;
 using System.Collections.Generic;
 using System;
+using System.Linq;
+using Radzen.Blazor.Rendering;
 
 namespace Radzen.Blazor
 {
@@ -33,6 +35,9 @@ namespace Radzen.Blazor
     /// </example>
     public partial class RadzenDropDown<TValue> : DropDownBase<TValue>
     {
+        IJSObjectReference? _jsRef;
+        int _jsRefVersion;
+
         bool isOpen;
 
         bool stopKeydownPropagation = true;
@@ -129,15 +134,21 @@ namespace Radzen.Blazor
         [Parameter]
         public Action<DropDownItemRenderEventArgs<TValue>>? ItemRender { get; set; }
 
+        // Shared resolution of the item-level disabled state (DisabledProperty), read by both the render
+        // args and RadzenDropDownItem.ShouldRender so the two cannot drift.
+        internal bool GetItemDisabled(object? item)
+        {
+            return !string.IsNullOrEmpty(DisabledProperty)
+                && GetItemOrValueFromProperty(item, DisabledProperty) is bool disabled && disabled;
+        }
+
         internal DropDownItemRenderEventArgs<TValue> ItemAttributes(RadzenDropDownItem<TValue> item)
         {
-            var disabled = !string.IsNullOrEmpty(DisabledProperty) ? GetItemOrValueFromProperty(item.Item, DisabledProperty) : false;
-
-            var args = new DropDownItemRenderEventArgs<TValue>() 
-            { 
-                DropDown = this, 
-                Item = item.Item, 
-                Disabled = disabled is bool ? (bool)disabled : false,
+            var args = new DropDownItemRenderEventArgs<TValue>()
+            {
+                DropDown = this,
+                Item = item.Item,
+                Disabled = GetItemDisabled(item.Item),
             };
 
             if (ItemRender != null)
@@ -156,10 +167,13 @@ namespace Radzen.Blazor
         [Parameter]
         public string OpenPopupKey { get; set; } = "Enter";
 
+        bool openedOnFocus;
+
         private async Task OnFocus()
         {
             if (OpenOnFocus)
             {
+                openedOnFocus = true;
                 await OpenPopup(OpenPopupKey, false);
             }
         }
@@ -182,7 +196,7 @@ namespace Radzen.Blazor
 
             if (key == "Enter" && JSRuntime != null)
             {
-                await JSRuntime.InvokeVoidAsync("Radzen.focusElement", UniqueID);
+                await JSRuntime.InvokeVoidAsync("Radzen.focusElement", UniqueID, true);
                 OpenOnFocus = of;
             }
         }
@@ -196,7 +210,26 @@ namespace Radzen.Blazor
         protected override async Task OpenPopup(string key = "ArrowDown", bool isFilter = false, bool isFromClick = false)
         {
             if (Disabled)
+            {
                 return;
+            }
+
+            if (OpenOnFocus && isFromClick)
+            {
+                var fromFocus = openedOnFocus;
+                openedOnFocus = false;
+
+                if (isOpen)
+                {
+                    if (fromFocus)
+                    {
+                        return;
+                    }
+
+                    await ClosePopup(key);
+                    return;
+                }
+            }
 
             if (!isOpen)
             {
@@ -222,6 +255,30 @@ namespace Radzen.Blazor
             {
                 await JSRuntime.InvokeVoidAsync("Radzen.selectListItem", search, list, selectedIndex);
             }
+        }
+
+        /// <summary>
+        /// Opens the dropdown popup programmatically.
+        /// </summary>
+        public Task OpenPopup()
+        {
+            return OpenPopup("ArrowDown", false, false);
+        }
+
+        /// <summary>
+        /// Closes the dropdown popup programmatically.
+        /// </summary>
+        public Task ClosePopup()
+        {
+            return ClosePopup(string.Empty);
+        }
+
+        /// <summary>
+        /// Toggles the dropdown popup, opening it if it is closed and closing it if it is open.
+        /// </summary>
+        public Task TogglePopup()
+        {
+            return isOpen ? ClosePopup() : OpenPopup();
         }
 
         internal override void RenderItem(RenderTreeBuilder builder, object item)
@@ -265,12 +322,14 @@ namespace Radzen.Blazor
         [Parameter]
         public bool Chips { get; set; }
 
+        private string? selectedItemsText;
+
         /// <summary>
         /// Gets or sets the selected items text.
         /// </summary>
         /// <value>The selected items text.</value>
         [Parameter]
-        public string SelectedItemsText { get; set; } = "items selected";
+        public string SelectedItemsText { get => selectedItemsText ?? Localize(nameof(RadzenStrings.DropDown_SelectedItemsText)); set => selectedItemsText = value; }
 
         /// <summary>
         /// Gets or sets the select all text.
@@ -278,6 +337,29 @@ namespace Radzen.Blazor
         /// <value>The select all text.</value>
         [Parameter]
         public string SelectAllText { get; set; } = string.Empty;
+
+        internal string? SelectedAriaLabel
+        {
+            get
+            {
+                if (!Multiple)
+                {
+                    return selectedItem != null ? $"{GetItemOrValueFromProperty(selectedItem, TextProperty ?? string.Empty)}" : EmptyAriaLabel;
+                }
+
+                if (selectedItems.Count == 0)
+                {
+                    return EmptyAriaLabel;
+                }
+
+                if (selectedItems.Count < MaxSelectedLabels)
+                {
+                    return string.Join(Separator, selectedItems.Select(i => $"{GetItemOrValueFromProperty(i, TextProperty ?? string.Empty)}"));
+                }
+
+                return $"{selectedItems.Count} {SelectedItemsText}";
+            }
+        }
 
         /// <summary>
         /// Callback for when a dropdown is opened.
@@ -351,6 +433,35 @@ namespace Radzen.Blazor
                         await JSRuntime.InvokeVoidAsync("Radzen.preventArrows", Element);
                     }
 
+                    if (JSRuntime != null)
+                    {
+                        var version = ++_jsRefVersion;
+                        var jsRef = _jsRef;
+                        _jsRef = null;
+
+                        if (jsRef != null)
+                        {
+                            await jsRef.InvokeVoidAsync("dispose");
+                            await jsRef.DisposeAsync();
+                        }
+
+                        if (version == _jsRefVersion)
+                        {
+                            var created = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                                "Radzen.createDropDown", Element);
+
+                            if (version == _jsRefVersion)
+                            {
+                                _jsRef = created;
+                            }
+                            else if (created != null)
+                            {
+                                await created.InvokeVoidAsync("dispose");
+                                await created.DisposeAsync();
+                            }
+                        }
+                    }
+
                     if (reload)
                     {
                         StateHasChanged();
@@ -377,12 +488,11 @@ namespace Radzen.Blazor
             if (!ReadOnly)
             {
                 var wasOpen = isOpen;
-                var wasPreventKeydown = preventKeydown;
 
                 await base.HandleKeyPress(args, isFilter, shouldSelectOnChange);
 
                 var key = args.Code ?? args.Key;
-                if (key == "Tab" && (wasOpen || wasPreventKeydown) && JSRuntime != null)
+                if (key == "Tab" && isFilter && wasOpen && JSRuntime != null)
                 {
                     await JSRuntime.InvokeVoidAsync("Radzen.focusNext", Element, args.ShiftKey);
                 }
@@ -434,14 +544,25 @@ namespace Radzen.Blazor
             }
         }
 
+        /// <summary>
+        /// Gets or sets the size of the component.
+        /// </summary>
+        [Parameter]
+        public InputSize InputSize { get; set; } = InputSize.Medium;
+
         /// <inheritdoc />
         protected override string GetComponentCssClass()
         {
             return GetClassList("rz-dropdown")
+                        .AddInputSize(InputSize)
                         .Add("rz-clear", AllowClear)
                         .Add("rz-dropdown-chips", Chips && selectedItems.Count > 0)
                         .ToString();
         }
+
+        string PopupCssClass => ClassList.Create(Multiple ? "rz-multiselect-panel" : "rz-dropdown-panel")
+                                         .AddInputSize(InputSize)
+                                         .ToString();
 
         /// <inheritdoc />
         public override void Dispose()
@@ -452,6 +573,12 @@ namespace Radzen.Blazor
             {
                 JSRuntime.InvokeVoid("Radzen.destroyPopup", PopupID);
             }
+
+            _jsRefVersion++;
+            var jsRef = _jsRef;
+            _jsRef = null;
+            jsRef?.InvokeVoidAsync("dispose");
+            jsRef?.DisposeAsync();
 
             GC.SuppressFinalize(this);
         }
@@ -464,6 +591,7 @@ namespace Radzen.Blazor
         {
             isOpen = false;
             isPopupOpen = false;
+            openedOnFocus = false;
             await Close.InvokeAsync();
         }
 

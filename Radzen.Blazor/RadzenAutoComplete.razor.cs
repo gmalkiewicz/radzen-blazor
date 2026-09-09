@@ -6,6 +6,7 @@ using Radzen.Blazor.Rendering;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -31,6 +32,7 @@ namespace Radzen.Blazor
     ///                      MinLength="2" FilterDelay="300" Placeholder="Type to search products..." /&gt;
     /// </code>
     /// </example>
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
     public partial class RadzenAutoComplete : DataBoundFormComponent<string>
     {
         object? selectedItem;
@@ -105,20 +107,6 @@ namespace Radzen.Blazor
         public RenderFragment? EmptyTemplate { get; set; }
 
         /// <summary>
-        /// Gets or sets the loading template shown while <see cref="IsLoading"/> is <c>true</c>.
-        /// </summary>
-        /// <value>The loading template.</value>
-        [Parameter]
-        public RenderFragment? LoadingTemplate { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether this instance loading indicator is shown.
-        /// </summary>
-        /// <value><c>true</c> if this instance loading indicator is shown; otherwise, <c>false</c>.</value>
-        [Parameter]
-        public bool IsLoading { get; set; }
-
-        /// <summary>
         /// Gets or sets the minimum length.
         /// </summary>
         /// <value>The minimum length.</value>
@@ -158,6 +146,7 @@ namespace Radzen.Blazor
 
         string? customSearchText;
         int selectedIndex = -1;
+        bool popupOpened;
 
         /// <summary>
         /// Handles the FilterKeyPress event.
@@ -193,14 +182,16 @@ namespace Radzen.Blazor
                     selectedIndex = -1;
                 }
 
-                if (key == "Tab" && JSRuntime != null)
+                if (key == "Tab")
                 {
-                    await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
+                    await ClosePopup();
                 }
             }
-            else if (key == "Escape" && JSRuntime != null)
+            else if (key == "Escape")
             {
-                await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
+                selectedIndex = -1;
+
+                await ClosePopup();
             }
             else
             {
@@ -212,14 +203,19 @@ namespace Radzen.Blazor
 
         async Task DebounceFilter()
         {
-            if (JSRuntime == null) return;
+            if (JSRuntime == null)
+            {
+                return;
+            }
+
             var value = await JSRuntime.InvokeAsync<string>("Radzen.getInputValue", search);
 
             value = $"{value}";
             
             if (value.Length < MinLength && !OpenOnFocus)
             {
-                await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
+                await ClosePopup();
+                await InvokeAsync(() => { StateHasChanged(); });
                 return;
             }
 
@@ -245,14 +241,52 @@ namespace Radzen.Blazor
 
         private string ListId => $"{PopupID}-list";
 
-        private bool IsPopupOpen => OpenOnFocus || (!string.IsNullOrEmpty(searchText) || !string.IsNullOrEmpty(customSearchText));
+        private string ItemId(int index) => $"{ListId}-{index}";
 
-        private async Task OnSelectItem(object item)
+        private string? ActiveDescendantId => selectedIndex >= 0 ? ItemId(selectedIndex) : null;
+
+        private bool IsPopupOpen => popupOpened;
+
+        /// <summary>
+        /// Invoked from client-side code when the suggestion popup opens.
+        /// </summary>
+        [JSInvokable]
+        public async Task OnPopupOpen()
         {
+            if (!popupOpened)
+            {
+                popupOpened = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        /// <summary>
+        /// Invoked from client-side code when the suggestion popup closes.
+        /// </summary>
+        [JSInvokable]
+        public async Task OnPopupClose()
+        {
+            if (popupOpened || selectedIndex != -1)
+            {
+                popupOpened = false;
+                selectedIndex = -1;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        private async Task ClosePopup()
+        {
+            popupOpened = false;
+
             if (JSRuntime != null)
             {
                 await JSRuntime.InvokeVoidAsync("Radzen.closePopup", PopupID);
             }
+        }
+
+        private async Task OnSelectItem(object item)
+        {
+            await ClosePopup();
 
             await SelectItem(item);
         }
@@ -286,19 +320,55 @@ namespace Radzen.Blazor
             }
         }
 
+        Func<object, object?>? textPropertyGetter;
+        Type? textPropertyGetterType;
+        string? textPropertyGetterProperty;
+
         /// <summary>
-        /// Handles the Change event.
+        /// Reads an item's TextProperty through a getter compiled once per (item type, TextProperty) and cached, falling back to reflection for anything it cannot compile.
         /// </summary>
-        /// <param name="args">The <see cref="ChangeEventArgs"/> instance containing the event data.</param>
-        protected async System.Threading.Tasks.Task OnChange(ChangeEventArgs args)
+        internal object? GetItemText(object? item)
         {
-            ArgumentNullException.ThrowIfNull(args);
+            // A primitive/string item or empty TextProperty yields the item itself, matching
+            // GetItemOrValueFromProperty (so List<string> with TextProperty="Length" shows the string, not its length).
+            // A nested path also stays on reflection: the compiled getter would render a null intermediate as the
+            // leaf type's default (e.g. "0") instead of blank, so only single-member paths are compiled.
+            if (item == null || string.IsNullOrEmpty(TextProperty) || TextProperty.Contains('.', StringComparison.Ordinal)
+                || Convert.GetTypeCode(item) != TypeCode.Object)
+            {
+                return PropertyAccess.GetItemOrValueFromProperty(item, TextProperty ?? string.Empty);
+            }
 
-            Value = args.Value?.ToString();
+            var type = item.GetType();
+            if (textPropertyGetterType != type || textPropertyGetterProperty != TextProperty)
+            {
+                textPropertyGetterType = type;
+                textPropertyGetterProperty = TextProperty;
+                try
+                {
+                    textPropertyGetter = PropertyAccess.Getter<object, object?>(TextProperty, type);
+                }
+                catch
+                {
+                    textPropertyGetter = null;
+                }
+            }
 
-            await ValueChanged.InvokeAsync($"{Value}");
-            if (FieldIdentifier.FieldName != null) { EditContext?.NotifyFieldChanged(FieldIdentifier); }
-            await Change.InvokeAsync(Value);
+            return textPropertyGetter != null ? textPropertyGetter(item) : PropertyAccess.GetItemOrValueFromProperty(item, TextProperty);
+        }
+
+        /// <summary>
+        /// Handles the @bind:set binding of the underlying input element.
+        /// </summary>
+        /// <param name="value">The new value reported by the change event.</param>
+        protected async System.Threading.Tasks.Task SetValue(string? value)
+        {
+            var newValue = value;
+            Value = newValue;
+
+            await ValueChanged.InvokeAsync($"{newValue}");
+            NotifyFieldChanged(newValue);
+            await Change.InvokeAsync(newValue);
 
             await SelectedItemChanged.InvokeAsync(null);
         }
@@ -307,7 +377,7 @@ namespace Radzen.Blazor
         {
             if (!string.IsNullOrEmpty(TextProperty))
             {
-                Value = PropertyAccess.GetItemOrValueFromProperty(item, TextProperty)?.ToString();
+                Value = GetItemText(item)?.ToString();
             }
             else
             {
@@ -337,8 +407,22 @@ namespace Radzen.Blazor
             return $"Radzen.openPopup(this.parentNode, '{PopupID}', true)";
         }
 
+        /// <summary>
+        /// Gets or sets the size of the component.
+        /// </summary>
+        [Parameter]
+        public InputSize InputSize { get; set; } = InputSize.Medium;
+
         /// <inheritdoc />
-        protected override string GetComponentCssClass() => GetClassList("rz-autocomplete").ToString();
+        protected override string GetComponentCssClass() => GetClassList("rz-autocomplete").AddInputSize(InputSize).ToString();
+
+        string PopupCssClass => ClassList.Create("rz-autocomplete-panel")
+                                         .AddInputSize(InputSize)
+                                         .ToString();
+
+        IJSObjectReference? _jsRef;
+        int _jsRefVersion;
+        bool _jsParamsChanged;
 
         /// <inheritdoc />
         public override void Dispose()
@@ -348,6 +432,16 @@ namespace Radzen.Blazor
             if (IsJSRuntimeAvailable && JSRuntime != null)
             {
                 JSRuntime.InvokeVoid("Radzen.destroyPopup", PopupID);
+            }
+
+            _jsRefVersion++;
+            var jsRef = _jsRef;
+            _jsRef = null;
+
+            if (jsRef != null)
+            {
+                jsRef.InvokeVoid("dispose");
+                jsRef.DisposeFireAndForget();
             }
 
             GC.SuppressFinalize(this);
@@ -360,11 +454,44 @@ namespace Radzen.Blazor
         /// </summary>
         /// <param name="firstRender">if set to <c>true</c> is first render.</param>
         /// <returns>Task.</returns>
-        protected override Task OnAfterRenderAsync(bool firstRender)
+        protected override async Task OnAfterRenderAsync(bool firstRender)
         {
             this.firstRender = firstRender;
 
-            return base.OnAfterRenderAsync(firstRender);
+            await base.OnAfterRenderAsync(firstRender);
+
+            if ((firstRender || _jsParamsChanged) && Visible && JSRuntime != null)
+            {
+                _jsParamsChanged = false;
+
+                var version = ++_jsRefVersion;
+                var jsRef = _jsRef;
+                _jsRef = null;
+
+                if (jsRef != null)
+                {
+                    await jsRef.InvokeVoidAsync("dispose");
+                    await jsRef.DisposeAsync();
+                }
+
+                if (version != _jsRefVersion)
+                {
+                    return;
+                }
+
+                var created = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                    "Radzen.createAutoComplete", Element, PopupID, OpenOnFocus, Reference, nameof(OnPopupOpen), nameof(OnPopupClose));
+
+                if (version == _jsRefVersion)
+                {
+                    _jsRef = created;
+                }
+                else if (created != null)
+                {
+                    await created.InvokeVoidAsync("dispose");
+                    await created.DisposeAsync();
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -376,26 +503,27 @@ namespace Radzen.Blazor
             {
                 var visible = parameters.GetValueOrDefault<bool>(nameof(Visible));
                 shouldClose = !visible;
+                _jsParamsChanged = true;
             }
 
-            if (parameters.DidParameterChange(nameof(SelectedItem), SelectedItem))
+            if (parameters.DidParameterChange(nameof(OpenOnFocus), OpenOnFocus))
             {
-                var item = parameters.GetValueOrDefault<object>(nameof(SelectedItem));
-                if (item != null)
-                {
-                    await SelectItem(item);
-                }
+                _jsParamsChanged = true;
             }
+
+            var selectedItemChanged = parameters.DidParameterChange(nameof(SelectedItem), SelectedItem);
 
             await base.SetParametersAsync(parameters);
 
-            if (parameters.DidParameterChange(nameof(Value), Value))
+            if (selectedItemChanged && SelectedItem != null)
             {
-                Value = parameters.GetValueOrDefault<string>(nameof(Value));
+                await SelectItem(SelectedItem);
             }
 
             if (shouldClose && !firstRender && JSRuntime != null)
             {
+                popupOpened = false;
+                selectedIndex = -1;
                 await JSRuntime.InvokeVoidAsync("Radzen.destroyPopup", PopupID);
             }
         }

@@ -8,6 +8,8 @@ using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 
 namespace Radzen
@@ -17,12 +19,123 @@ namespace Radzen
     /// </summary>
     public static class QueryableExtension
     {
+        private const string ReflectionWarning = TrimMessages.DynamicLinqReflection;
+
+        static readonly MethodInfo StringContains = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+        static readonly MethodInfo StringStartsWith = typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string)])!;
+        static readonly MethodInfo StringEndsWith = typeof(string).GetMethod(nameof(string.EndsWith), [typeof(string)])!;
+        static readonly MethodInfo StringToLower = typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)!;
+        static readonly MethodInfo StringEqualsComparison = typeof(string).GetMethod(nameof(string.Equals), [typeof(string), typeof(StringComparison)])!;
+        static readonly MethodInfo StringContainsComparison = typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)])!;
+        static readonly MethodInfo StringStartsWithComparison = typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string), typeof(StringComparison)])!;
+        static readonly MethodInfo StringEndsWithComparison = typeof(string).GetMethod(nameof(string.EndsWith), [typeof(string), typeof(StringComparison)])!;
+
         static Expression notNullCheck(Expression property) => Nullable.GetUnderlyingType(property.Type) != null || property.Type == typeof(string) ?
             Expression.Coalesce(property, property.Type == typeof(string) ? Expression.Constant(string.Empty) : Expression.Constant(null, property.Type)) : property;
+
+        static bool IsNullOrEmptyOperator(FilterOperator filterOperator) =>
+            filterOperator == FilterOperator.IsNull || filterOperator == FilterOperator.IsNotNull ||
+            filterOperator == FilterOperator.IsEmpty || filterOperator == FilterOperator.IsNotEmpty;
+
+        static Expression? EnumerableIsEmpty(Expression collection, Type? elementType)
+        {
+            if (elementType == null || !IsEnumerable(collection.Type))
+            {
+                return null;
+            }
+
+            return Expression.OrElse(
+                Expression.Equal(collection, Expression.Constant(null, collection.Type)),
+                Expression.Not(Expression.Call(typeof(Enumerable), nameof(Enumerable.Any), new Type[] { elementType }, collection)));
+        }
+
+        static Expression EnumerableAnyOrAll(Expression collection, Type elementType, LambdaExpression predicate, bool all = false)
+        {
+            return Expression.AndAlso(
+                Expression.NotEqual(collection, Expression.Constant(null, collection.Type)),
+                Expression.Call(typeof(Enumerable), all ? nameof(Enumerable.All) : nameof(Enumerable.Any), new Type[] { elementType }, collection, predicate));
+        }
+
+        [RequiresUnreferencedCode(ReflectionWarning)]
+        static IList? NormalizeFilterValues(object? value, Type targetType)
+        {
+            if (value is not IEnumerable enumerable || value is string)
+            {
+                return null;
+            }
+
+            var values = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(targetType))!;
+
+            foreach (var item in enumerable)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                if (targetType.IsInstanceOfType(item))
+                {
+                    values.Add(item);
+                }
+                else
+                {
+                    try
+                    {
+                        values.Add(targetType.IsEnum ? Enum.ToObject(targetType, item) :
+                            Convert.ChangeType(item, targetType, CultureInfo.InvariantCulture));
+                    }
+                    catch (ArgumentException)
+                    {
+                    }
+                    catch (InvalidCastException)
+                    {
+                    }
+                    catch (FormatException)
+                    {
+                    }
+                    catch (OverflowException)
+                    {
+                    }
+                }
+            }
+
+            return values;
+        }
+
+        [RequiresUnreferencedCode(ReflectionWarning)]
+        static Expression GetInExpression(Expression property, object? filterValue, bool negate)
+        {
+            var targetType = Nullable.GetUnderlyingType(property.Type) ?? property.Type;
+            var values = NormalizeFilterValues(filterValue, targetType);
+
+            if (values == null)
+            {
+                return Expression.Constant(true);
+            }
+
+            var constant = Expression.Constant(values, values.GetType());
+
+            if (Nullable.GetUnderlyingType(property.Type) != null)
+            {
+                Expression contains = Expression.Call(typeof(Enumerable), nameof(Enumerable.Contains), new[] { targetType },
+                    constant, Expression.Property(property, "Value"));
+
+                return Expression.Condition(
+                    Expression.Property(property, "HasValue"),
+                    negate ? Expression.Not(contains) : contains,
+                    Expression.Constant(negate, typeof(bool)));
+            }
+
+            Expression call = Expression.Call(typeof(Enumerable), nameof(Enumerable.Contains), new[] { targetType },
+                constant, notNullCheck(property));
+
+            return negate ? Expression.Not(call) : call;
+        }
 
         /// <summary>
         /// Projects each element of a sequence into a collection of property values.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable Select(this IQueryable source, string propertyName)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -44,6 +157,7 @@ namespace Radzen
         /// <summary>
         /// Projects each element of a sequence into a collection of property values.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable Select(this IQueryable source, IEnumerable<string> propertyNames)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -75,6 +189,7 @@ namespace Radzen
         /// <summary>
         /// Projects each element of a sequence into a collection of property values.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable<T> Select<T>(this IQueryable<T> source, IEnumerable<string> propertyNames)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -104,6 +219,7 @@ namespace Radzen
         /// <summary>
         /// Projects each element of a sequence to an IEnumerable and flattens the resulting sequences into one sequence.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable SelectMany(this IQueryable source, string propertyName)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -132,6 +248,7 @@ namespace Radzen
         /// <summary>
         /// Projects each element of a sequence to an IEnumerable and flattens the resulting sequences into one sequence.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable<GroupResult> GroupByMany<T>(this IQueryable<T> source, string[] properties)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -145,6 +262,7 @@ namespace Radzen
             return GroupByMany(source, expressions, 0);
         }
 
+        [RequiresUnreferencedCode(ReflectionWarning)]
         private static IQueryable<GroupResult> GroupByMany<T>(IQueryable<T> source, Expression<Func<T, object>>[] expressions, int index)
         {
             if (index < expressions.Length - 1)
@@ -190,6 +308,7 @@ namespace Radzen
         /// Sorts the elements of a sequence in ascending or descending order according to a key.
         /// </summary>
         /// <returns>A <see cref="IQueryable{T}"/> whose elements are sorted according to the specified <paramref name="selector"/>.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, string? selector = null)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -230,6 +349,7 @@ namespace Radzen
         /// Sorts the elements of a sequence in ascending or descending order according to a key.
         /// </summary>
         /// <returns>A <see cref="IQueryable"/> whose elements are sorted according to the specified <paramref name="selector"/>.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable OrderBy(this IQueryable source, string? selector = null)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -245,21 +365,55 @@ namespace Radzen
 
             string methodAsc = "OrderBy";
             string methodDesc = "OrderByDescending";
-            string[] sortStrings = new string[] { "asc", "desc" }; 
 
             foreach (var o in (selector ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
-                var nameAndOrder = o.Trim();
-                var name = string.Join(" ", nameAndOrder.Split(' ').Where(i => !sortStrings.Contains(i.Trim()))).Trim();
-                var order = nameAndOrder.Split(' ').FirstOrDefault(i => sortStrings.Contains(i.Trim())) ?? sortStrings.First();
+                // Keep empty tokens so repeated spaces in dynamic keys survive reconstruction.
+                string? name = null;
+                StringBuilder? nameBuilder = null;
+                var descending = false;
+                var orderSet = false;
+                foreach (var token in o.Trim().Split(' '))
+                {
+                    if (token.Trim() is not ("asc" or "desc"))
+                    {
+                        if (name is null)
+                        {
+                            name = token;
+                        }
+                        else
+                        {
+                            (nameBuilder ??= new StringBuilder(name)).Append(' ').Append(token);
+                        }
+
+                        continue;
+                    }
+
+                    if (orderSet)
+                    {
+                        continue;
+                    }
+
+                    orderSet = true;
+
+                    // Compare the raw token to preserve the previous parser's whitespace behavior.
+                    descending = !token.Equals("asc", StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (nameBuilder is not null)
+                {
+                    name = nameBuilder.ToString();
+                }
+
+                name = name?.Trim();
 
                 Expression property = !string.IsNullOrEmpty(name) && name != "x" && name != "it"
                     ? GetNestedPropertyExpression(parameterExpression, name)
                     : parameterExpression;
 
                 expression = Expression.Call(
-                    typeof(Queryable), order.Equals(sortStrings.First(), StringComparison.OrdinalIgnoreCase) ? methodAsc : methodDesc,
-                    new Type[] { source.ElementType, property.Type },
+                    typeof(Queryable), descending ? methodDesc : methodAsc,
+                    [source.ElementType, property.Type],
                     expression, Expression.Quote(Expression.Lambda(property, parameters)));
 
                 methodAsc = "ThenBy";
@@ -274,6 +428,7 @@ namespace Radzen
         /// </summary>
         /// <param name="source">The <see cref="IQueryable"/> to return the first element of.</param>
         /// <returns>default if source is empty; otherwise, the first element in source.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static dynamic FirstOrDefault(this IQueryable source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -291,6 +446,7 @@ namespace Radzen
         /// </summary>
         /// <param name="source">The <see cref="IQueryable"/> to return the last element of.</param>
         /// <returns>default if source is empty; otherwise, the last element in source.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static dynamic LastOrDefault(this IQueryable source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -309,6 +465,7 @@ namespace Radzen
         /// <param name="source">The <see cref="IQueryable"/> that contains the elements to be converted.</param>
         /// <param name="type">The type to convert the elements of source to.</param>
         /// <returns>An <see cref="IQueryable"/> that contains each element of the source sequence converted to the specified type.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable Cast(this IQueryable source, Type type)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -329,6 +486,7 @@ namespace Radzen
         /// <param name="source">The <see cref="IQueryable"/> that contains the elements to be summed.</param>
         /// <param name="type">The type to cast the elements of source to.</param>
         /// <returns>The result.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static dynamic Sum(this IQueryable source, Type type)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -348,6 +506,7 @@ namespace Radzen
         /// <param name="source">The <see cref="IQueryable"/> that contains the elements to be used for average calculation.</param>
         /// <param name="type">The type to cast the elements of source to.</param>
         /// <returns>The result.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static dynamic Average(this IQueryable source, Type type)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -371,6 +530,7 @@ namespace Radzen
         /// <param name="source">The <see cref="IQueryable"/> that contains the elements to be used to get the minimum value.</param>
         /// <param name="type">The type to cast the elements of source to.</param>
         /// <returns>The result.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static dynamic Min(this IQueryable source, Type type)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -391,6 +551,7 @@ namespace Radzen
         /// <param name="source">The <see cref="IQueryable"/> that contains the elements to be used to get the maximum value.</param>
         /// <param name="type">The type to cast the elements of source to.</param>
         /// <returns>The result.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static dynamic Max(this IQueryable source, Type type)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -410,6 +571,7 @@ namespace Radzen
         /// </summary>
         /// <param name="source">The sequence to remove duplicate elements from.</param>
         /// <returns>An <see cref="IQueryable"/> that contains distinct elements from the source sequence.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable Distinct(this IQueryable source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -428,6 +590,7 @@ namespace Radzen
         /// <summary>
         /// Filters using the specified filter descriptors.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable Where(
             this IQueryable source,
             IEnumerable<FilterDescriptor> filters,
@@ -455,6 +618,7 @@ namespace Radzen
         /// <summary>
         /// Filters using the specified filter descriptors.
         /// </summary>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable<T> Where<T>(this IQueryable<T> source, IEnumerable<FilterDescriptor> filters,
             LogicalFilterOperator logicalFilterOperator, FilterCaseSensitivity filterCaseSensitivity)
         {
@@ -468,15 +632,24 @@ namespace Radzen
             var filterList = filters as ICollection<FilterDescriptor> ?? filters.ToList();
 
             if (filterList.Count == 0)
+            {
                 return source;
+            }
 
             var parameter = Expression.Parameter(typeof(T), "x");
             Expression? combinedExpression = null;
 
+            // Only an in-memory (LINQ-to-Objects) source can use OrdinalIgnoreCase string comparisons;
+            // a provider such as EF Core can't translate them and needs the ToLower path.
+            var inMemory = source is System.Linq.EnumerableQuery;
+
             foreach (var filter in filterList)
             {
-                var expression = GetExpression<T>(parameter, filter, filterCaseSensitivity, filter.Type ?? typeof(object));
-                if (expression == null) continue;
+                var expression = GetExpression<T>(parameter, filter, filterCaseSensitivity, filter.Type ?? typeof(object), inMemory);
+                if (expression == null)
+                {
+                    continue;
+                }
 
                 combinedExpression = combinedExpression == null
                     ? expression
@@ -486,17 +659,23 @@ namespace Radzen
             }
 
             if (combinedExpression == null)
+            {
                 return source;
+            }
 
             var lambda = Expression.Lambda<Func<T, bool>>(combinedExpression!, parameter);
 
             return source.Where(lambda);
         }
 
+        [RequiresUnreferencedCode(ReflectionWarning)]
         internal static Expression GetNestedPropertyExpression(Expression expression, string property, Type? type = null)
         {
             ArgumentNullException.ThrowIfNull(expression);
-            if (string.IsNullOrWhiteSpace(property)) return Expression.Constant(null, typeof(object));
+            if (string.IsNullOrWhiteSpace(property))
+            {
+                return Expression.Constant(null, typeof(object));
+            }
 
             var parts = property.Split(separator, 2);
             var currentPart = parts[0];
@@ -535,7 +714,9 @@ namespace Radzen
                             .FirstOrDefault(i => i.GetProperty(memberName) != null);
 
                     if (declaring == null)
+                    {
                         throw new InvalidOperationException($"Member '{memberName}' not found on interface '{t}'.");
+                    }
 
                     return Expression.Property(instance, declaring, memberName);
                 }
@@ -547,10 +728,16 @@ namespace Radzen
                 catch (AmbiguousMatchException)
                 {
                     var prop = t.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy);
-                    if (prop != null) return Expression.Property(instance, prop);
+                    if (prop != null)
+                    {
+                        return Expression.Property(instance, prop);
+                    }
 
                     var field = t.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy);
-                    if (field != null) return Expression.Field(instance, field);
+                    if (field != null)
+                    {
+                        return Expression.Field(instance, field);
+                    }
 
                     throw;
                 }
@@ -613,7 +800,9 @@ namespace Radzen
                 collection = shouldNullPropagate ? NullPropagate(expression, collection) : collection;
 
                 if (!int.TryParse(indexString, out var index))
+                {
                     throw new ArgumentException($"Invalid index format: {indexString}");
+                }
 
                 var underlyingCollection = Nullable.GetUnderlyingType(collection.Type) != null
                     ? Expression.Property(collection, "Value")
@@ -628,7 +817,9 @@ namespace Radzen
                 {
                     var itemProp = underlyingCollection.Type.GetProperty("Item");
                     if (itemProp == null)
+                    {
                         throw new InvalidOperationException($"Type '{underlyingCollection.Type}' has no indexer 'Item'.");
+                    }
 
                     indexed = Expression.Property(underlyingCollection, itemProp, Expression.Constant(index));
                 }
@@ -642,12 +833,15 @@ namespace Radzen
             }
 
             if (parts.Length > 1)
+            {
                 return GetNestedPropertyExpression(member, parts[1], type);
+            }
 
             return member;
         }
 
-        internal static Expression GetExpression<T>(ParameterExpression parameter, FilterDescriptor filter, FilterCaseSensitivity filterCaseSensitivity, Type type)
+        [RequiresUnreferencedCode(ReflectionWarning)]
+        internal static Expression GetExpression<T>(ParameterExpression parameter, FilterDescriptor filter, FilterCaseSensitivity filterCaseSensitivity, Type type, bool useOrdinalIgnoreCaseStrings = false)
         {
             Type? valueType = filter.FilterValue != null ? filter.FilterValue.GetType() : null;
             var isEnumerable = valueType != null && IsEnumerable(valueType) && valueType != typeof(string);
@@ -659,7 +853,17 @@ namespace Radzen
             var propertyName = !isEnumerable && !IsEnumerable(p.Type) ? (!string.IsNullOrWhiteSpace(filter.FilterProperty) ? filter.FilterProperty : filter.Property) : filter.Property;
             Expression property = !string.IsNullOrEmpty(propertyName) ? GetNestedPropertyExpression(parameter, propertyName, type) : Expression.Constant(null);
 
-            Type? collectionItemType = IsEnumerable(property.Type) && property.Type.IsGenericType ? property.Type.GetGenericArguments()[0] : null;
+            Type? collectionItemType = !IsEnumerable(property.Type) ? null
+                : property.Type.IsGenericType ? property.Type.GetGenericArguments()[0]
+                : property.Type.IsArray ? property.Type.GetElementType()
+                : null;
+
+            var collectionElementType = collectionItemType;
+
+            if (collectionItemType != null && string.IsNullOrEmpty(filter.FilterProperty) && IsNullOrEmptyOperator(filter.FilterOperator))
+            {
+                collectionItemType = null;
+            }
 
             ParameterExpression? collectionItemTypeParameter = collectionItemType != null ? Expression.Parameter(collectionItemType, "x") : null;
 
@@ -676,9 +880,14 @@ namespace Radzen
             var isEnum = !isEnumerable && (PropertyAccess.IsEnum(property.Type) || PropertyAccess.IsNullableEnum(property.Type));
             var caseInsensitive = property.Type == typeof(string) && !isEnumerable && filterCaseSensitivity == FilterCaseSensitivity.CaseInsensitive;
 
+            // EF can't translate the StringComparison overloads, so only an in-memory source uses them.
+            var useOrdinal = caseInsensitive && useOrdinalIgnoreCaseStrings;
+
             var isEnumerableProperty = IsEnumerable(property.Type) && property.Type != typeof(string);
 
-            var constantValue = caseInsensitive
+            var constantValue = useOrdinal
+                ? $"{filter.FilterValue}"
+                : caseInsensitive
                 ? $"{filter.FilterValue}".ToLowerInvariant()
                 : isEnum && !isEnumerable && filter.FilterValue != null
                     ? Enum.ToObject(Nullable.GetUnderlyingType(property.Type) ?? property.Type, filter.FilterValue)
@@ -705,15 +914,19 @@ namespace Radzen
 
             var constant = Expression.Constant(constantValue, constantType);
 
-            if (caseInsensitive && !isEnumerable)
+            var rawProperty = property;
+
+            if (caseInsensitive && !isEnumerable && !useOrdinal)
             {
-                property = Expression.Call(notNullCheck(property), typeof(string).GetMethod("ToLower", Type.EmptyTypes)!);
+                property = Expression.Call(notNullCheck(property), StringToLower);
             }
 
             Expression? secondConstant = null;
             if (filter.SecondFilterValue != null)
             {
-                var secondValue = caseInsensitive
+                var secondValue = useOrdinal
+                    ? $"{filter.SecondFilterValue}"
+                    : caseInsensitive
                     ? $"{filter.SecondFilterValue}".ToLowerInvariant()
                     : isEnum
                         ? Enum.ToObject(Nullable.GetUnderlyingType(property.Type) ?? property.Type, filter.SecondFilterValue)
@@ -737,6 +950,22 @@ namespace Radzen
                 secondConstant = Expression.Constant(secondValue, secondConstantType);
             }
 
+            Expression? OrdinalStringOp(FilterOperator op, Expression value)
+            {
+                var ordinal = Expression.Constant(StringComparison.OrdinalIgnoreCase);
+                var target = notNullCheck(property);
+                return op switch
+                {
+                    FilterOperator.Equals => Expression.Call(target, StringEqualsComparison, value, ordinal),
+                    FilterOperator.NotEquals => Expression.Not(Expression.Call(target, StringEqualsComparison, value, ordinal)),
+                    FilterOperator.Contains => Expression.Call(target, StringContainsComparison, value, ordinal),
+                    FilterOperator.DoesNotContain => Expression.Not(Expression.Call(target, StringContainsComparison, value, ordinal)),
+                    FilterOperator.StartsWith => Expression.Call(target, StringStartsWithComparison, value, ordinal),
+                    FilterOperator.EndsWith => Expression.Call(target, StringEndsWithComparison, value, ordinal),
+                    _ => null
+                };
+            }
+
             Expression? primaryExpression = filter.FilterOperator switch
             {
                 FilterOperator.Equals => Expression.Equal(notNullCheck(property), constant),
@@ -749,60 +978,87 @@ namespace Radzen
                     Expression.Call(typeof(Enumerable), nameof(Enumerable.Contains), new Type[] { property.Type }, constant, notNullCheck(property)) :
                          isEnumerableProperty ? 
                             Expression.Call(typeof(Enumerable), nameof(Enumerable.Contains), new Type[] { collectionItemType! }, notNullCheck(property), constant) :
-                                Expression.Call(notNullCheck(property), typeof(string).GetMethod("Contains", new[] { typeof(string) })!, constant),
+                                Expression.Call(notNullCheck(property), StringContains, constant),
                 FilterOperator.In => isEnumerable &&
                                     isEnumerableProperty ?
                     Expression.Call(typeof(Enumerable), nameof(Enumerable.Any), new Type[] { collectionItemType! },
-                        Expression.Call(typeof(Enumerable), nameof(Enumerable.Intersect), new Type[] { collectionItemType! }, constant, notNullCheck(property))) : Expression.Constant(true),
+                        Expression.Call(typeof(Enumerable), nameof(Enumerable.Intersect), new Type[] { collectionItemType! }, constant, notNullCheck(property))) :
+                    isEnumerableProperty ? Expression.Constant(true) : GetInExpression(property, filter.FilterValue, false),
                 FilterOperator.DoesNotContain => isEnumerable ?
                     Expression.Not(Expression.Call(typeof(Enumerable), nameof(Enumerable.Contains), new Type[] { property.Type }, constant, notNullCheck(property))) :
                         isEnumerableProperty ?
                             Expression.Not(Expression.Call(typeof(Enumerable), nameof(Enumerable.Contains), new Type[] { collectionItemType! }, notNullCheck(property), constant)) : 
-                                Expression.Not(Expression.Call(notNullCheck(property), typeof(string).GetMethod("Contains", new[] { typeof(string) })!, constant)),
+                                Expression.Not(Expression.Call(notNullCheck(property), StringContains, constant)),
                 FilterOperator.NotIn => isEnumerable &&
                                     isEnumerableProperty ?
                     Expression.Call(typeof(Enumerable), nameof(Enumerable.Any), new Type[] { collectionItemType! },
-                        Expression.Call(typeof(Enumerable), nameof(Enumerable.Except), new Type[] { collectionItemType! }, constant, notNullCheck(property))) : Expression.Constant(true),
-                FilterOperator.StartsWith => Expression.Call(notNullCheck(property), typeof(string).GetMethod("StartsWith", new[] { typeof(string) })!, constant),
-                FilterOperator.EndsWith => Expression.Call(notNullCheck(property), typeof(string).GetMethod("EndsWith", new[] { typeof(string) })!, constant),
-                FilterOperator.IsNull => Expression.Equal(property, Expression.Constant(null, property.Type)),
-                FilterOperator.IsNotNull => Expression.NotEqual(property, Expression.Constant(null, property.Type)),
-                FilterOperator.IsEmpty => Expression.Equal(property, Expression.Constant(String.Empty)),
-                FilterOperator.IsNotEmpty => Expression.NotEqual(property, Expression.Constant(String.Empty)),
+                        Expression.Call(typeof(Enumerable), nameof(Enumerable.Except), new Type[] { collectionItemType! }, constant, notNullCheck(property))) :
+                    isEnumerableProperty ? Expression.Constant(true) : GetInExpression(property, filter.FilterValue, true),
+                FilterOperator.StartsWith => Expression.Call(notNullCheck(property), StringStartsWith, constant),
+                FilterOperator.EndsWith => Expression.Call(notNullCheck(property), StringEndsWith, constant),
+                FilterOperator.IsNull => Expression.Equal(rawProperty, Expression.Constant(null, rawProperty.Type)),
+                FilterOperator.IsNotNull => Expression.NotEqual(rawProperty, Expression.Constant(null, rawProperty.Type)),
+                FilterOperator.IsEmpty => EnumerableIsEmpty(rawProperty, collectionElementType) ?? Expression.Equal(rawProperty, Expression.Constant(String.Empty)),
+                FilterOperator.IsNotEmpty => EnumerableIsEmpty(rawProperty, collectionElementType) is { } isEmpty ? Expression.Not(isEmpty) : Expression.NotEqual(rawProperty, Expression.Constant(String.Empty)),
                 _ => null
             };
+
+            if (useOrdinal && OrdinalStringOp(filter.FilterOperator, constant) is { } ordinalPrimary)
+            {
+                primaryExpression = ordinalPrimary;
+            }
 
         if (collectionItemType != null && primaryExpression != null &&
             !(filter.FilterOperator == FilterOperator.In || filter.FilterOperator == FilterOperator.NotIn))
         {
             if (filter.Property != null)
             {
-                primaryExpression = Expression.Call(typeof(Enumerable), filter.CollectionFilterMode == CollectionFilterMode.Any ? nameof(Enumerable.Any) : nameof(Enumerable.All), new Type[] { collectionItemType! },
-                    GetNestedPropertyExpression(parameter, filter.Property), Expression.Lambda(primaryExpression, collectionItemTypeParameter!));
+                primaryExpression = EnumerableAnyOrAll(GetNestedPropertyExpression(parameter, filter.Property), collectionItemType!,
+                    Expression.Lambda(primaryExpression, collectionItemTypeParameter!), filter.CollectionFilterMode == CollectionFilterMode.All);
             }
             }
 
         Expression? secondExpression = null;
-            if (secondConstant != null)
+            var secondIsNullOrEmptyOperator = filter.SecondFilterOperator == FilterOperator.IsNull
+                || filter.SecondFilterOperator == FilterOperator.IsNotNull
+                || filter.SecondFilterOperator == FilterOperator.IsEmpty
+                || filter.SecondFilterOperator == FilterOperator.IsNotEmpty;
+
+            if (secondConstant != null || secondIsNullOrEmptyOperator)
             {
                 secondExpression = filter.SecondFilterOperator switch
                 {
-                    FilterOperator.Equals => Expression.Equal(notNullCheck(property), secondConstant),
-                    FilterOperator.NotEquals => Expression.NotEqual(notNullCheck(property), secondConstant),
-                    FilterOperator.LessThan => Expression.LessThan(notNullCheck(property), secondConstant),
-                    FilterOperator.LessThanOrEquals => Expression.LessThanOrEqual(notNullCheck(property), secondConstant),
-                    FilterOperator.GreaterThan => Expression.GreaterThan(notNullCheck(property), secondConstant),
-                    FilterOperator.GreaterThanOrEquals => Expression.GreaterThanOrEqual(notNullCheck(property), secondConstant),
-                    FilterOperator.Contains => Expression.Call(notNullCheck(property), typeof(string).GetMethod("Contains", new[] { typeof(string) })!, secondConstant),
-                    FilterOperator.DoesNotContain => Expression.Not(Expression.Call(notNullCheck(property), property.Type.GetMethod("Contains", new[] { typeof(string) })!, secondConstant)),
-                    FilterOperator.StartsWith => Expression.Call(notNullCheck(property), typeof(string).GetMethod("StartsWith", new[] { typeof(string) })!, secondConstant),
-                    FilterOperator.EndsWith => Expression.Call(notNullCheck(property), typeof(string).GetMethod("EndsWith", new[] { typeof(string) })!, secondConstant),
-                    FilterOperator.IsNull => Expression.Equal(property, Expression.Constant(null, property.Type)),
-                    FilterOperator.IsNotNull => Expression.NotEqual(property, Expression.Constant(null, property.Type)),
-                    FilterOperator.IsEmpty => Expression.Equal(property, Expression.Constant(String.Empty)),
-                    FilterOperator.IsNotEmpty => Expression.NotEqual(property, Expression.Constant(String.Empty)),
+                    FilterOperator.Equals => Expression.Equal(notNullCheck(property), secondConstant!),
+                    FilterOperator.NotEquals => Expression.NotEqual(notNullCheck(property), secondConstant!),
+                    FilterOperator.LessThan => Expression.LessThan(notNullCheck(property), secondConstant!),
+                    FilterOperator.LessThanOrEquals => Expression.LessThanOrEqual(notNullCheck(property), secondConstant!),
+                    FilterOperator.GreaterThan => Expression.GreaterThan(notNullCheck(property), secondConstant!),
+                    FilterOperator.GreaterThanOrEquals => Expression.GreaterThanOrEqual(notNullCheck(property), secondConstant!),
+                    FilterOperator.Contains => Expression.Call(notNullCheck(property), StringContains, secondConstant!),
+                    FilterOperator.DoesNotContain => Expression.Not(Expression.Call(notNullCheck(property), StringContains, secondConstant!)),
+                    FilterOperator.In => secondValueType != null && IsEnumerable(secondValueType) && secondValueType != typeof(string) &&
+                                        isEnumerableProperty ?
+                        Expression.Call(typeof(Enumerable), nameof(Enumerable.Any), new Type[] { collectionItemType! },
+                            Expression.Call(typeof(Enumerable), nameof(Enumerable.Intersect), new Type[] { collectionItemType! }, secondConstant!, notNullCheck(property))) :
+                        isEnumerableProperty ? Expression.Constant(true) : GetInExpression(property, filter.SecondFilterValue, false),
+                    FilterOperator.NotIn => secondValueType != null && IsEnumerable(secondValueType) && secondValueType != typeof(string) &&
+                                        isEnumerableProperty ?
+                        Expression.Call(typeof(Enumerable), nameof(Enumerable.Any), new Type[] { collectionItemType! },
+                            Expression.Call(typeof(Enumerable), nameof(Enumerable.Except), new Type[] { collectionItemType! }, secondConstant!, notNullCheck(property))) :
+                        isEnumerableProperty ? Expression.Constant(true) : GetInExpression(property, filter.SecondFilterValue, true),
+                    FilterOperator.StartsWith => Expression.Call(notNullCheck(property), StringStartsWith, secondConstant!),
+                    FilterOperator.EndsWith => Expression.Call(notNullCheck(property), StringEndsWith, secondConstant!),
+                    FilterOperator.IsNull => Expression.Equal(rawProperty, Expression.Constant(null, rawProperty.Type)),
+                    FilterOperator.IsNotNull => Expression.NotEqual(rawProperty, Expression.Constant(null, rawProperty.Type)),
+                    FilterOperator.IsEmpty => EnumerableIsEmpty(rawProperty, collectionElementType) ?? Expression.Equal(rawProperty, Expression.Constant(String.Empty)),
+                    FilterOperator.IsNotEmpty => EnumerableIsEmpty(rawProperty, collectionElementType) is { } secondIsEmpty ? Expression.Not(secondIsEmpty) : Expression.NotEqual(rawProperty, Expression.Constant(String.Empty)),
                     _ => null
                 };
+
+                if (useOrdinal && secondConstant != null && OrdinalStringOp(filter.SecondFilterOperator, secondConstant) is { } ordinalSecond)
+                {
+                    secondExpression = ordinalSecond;
+                }
             }
 
         if (collectionItemType != null && secondExpression != null &&
@@ -810,8 +1066,8 @@ namespace Radzen
         {
             if (filter.Property != null)
             {
-                secondExpression = Expression.Call(typeof(Enumerable), nameof(Enumerable.Any), new Type[] { collectionItemType! },
-                    GetNestedPropertyExpression(parameter, filter.Property), Expression.Lambda(secondExpression, collectionItemTypeParameter!));
+                secondExpression = EnumerableAnyOrAll(GetNestedPropertyExpression(parameter, filter.Property), collectionItemType!,
+                    Expression.Lambda(secondExpression, collectionItemTypeParameter!));
             }
             }
 
@@ -882,6 +1138,7 @@ namespace Radzen
         /// </summary>
         /// <param name="query">The query.</param>
         /// <returns>IList.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IList ToList(IQueryable query)
         {
             ArgumentNullException.ThrowIfNull(query);
@@ -907,6 +1164,7 @@ namespace Radzen
         /// <typeparam name="T"></typeparam>
         /// <param name="columns">The columns.</param>
         /// <returns>System.String.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static string ToFilterString<T>(this IEnumerable<RadzenDataGridColumn<T>> columns) where T : notnull
         {
             Func<RadzenDataGridColumn<T>, bool> canFilter = (c) => c.Filterable && c.FilterPropertyType != null &&
@@ -952,7 +1210,10 @@ namespace Radzen
                     foreach (var filter in filters)
                     {
                         var expression = GetExpression<T>(parameter, filter, gridFilterCaseSensitivity, filter.Type ?? typeof(object));
-                        if (expression == null) continue;
+                        if (expression == null)
+                        {
+                            continue;
+                        }
 
                         combinedExpression = combinedExpression == null
                             ? expression
@@ -990,6 +1251,7 @@ namespace Radzen
         /// <typeparam name="T">The type that is being filtered</typeparam>
         /// <param name="dataFilter">The RadzenDataFilter component</param>
         /// <returns>A Linq-compatible filter string</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static string ToFilterString<T>(this RadzenDataFilter<T> dataFilter)
         {
             ArgumentNullException.ThrowIfNull(dataFilter);
@@ -1042,7 +1304,8 @@ namespace Radzen
         /// <param name="logicalFilterOperator">The LogicalFilterOperator</param>
         /// <param name="filterCaseSensitivity">The FilterCaseSensitivity</param>
         /// <returns>A Linq-compatible filter string</returns>
-        public static string ToFilterString<T>(this IEnumerable<CompositeFilterDescriptor> filters, 
+        [RequiresUnreferencedCode(ReflectionWarning)]
+        public static string ToFilterString<T>(this IEnumerable<CompositeFilterDescriptor> filters,
             LogicalFilterOperator logicalFilterOperator = LogicalFilterOperator.And,
             FilterCaseSensitivity filterCaseSensitivity = FilterCaseSensitivity.Default)
         {
@@ -1096,6 +1359,7 @@ namespace Radzen
         /// <param name="filterValue">The specific value to filter by</param>
         /// <param name="columnFilterOperator">The operator used to compare to <paramref name="filterValue"/></param>
         /// <returns>System.String.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         internal static string GetColumnODataFilter<T>(RadzenDataGridColumn<T> column, object? filterValue, FilterOperator columnFilterOperator) where T : notnull
         {
         var filterProperty = column.GetFilterProperty();
@@ -1184,9 +1448,21 @@ namespace Radzen
 
                 Func<object, string> formatElement = item =>
                 {
-                    if (item is DateTimeOffset dto) return dto.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
-                    if (item is DateTime dt) return dt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
-                    if (item is DateOnly d) return d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    if (item is DateTimeOffset dto)
+                    {
+                        return dto.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+                    }
+
+                    if (item is DateTime dt)
+                    {
+                        return dt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+                    }
+
+                    if (item is DateOnly d)
+                    {
+                        return d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    }
+
                     return item?.ToString() ?? "";
                 };
 
@@ -1289,6 +1565,7 @@ namespace Radzen
         /// <typeparam name="T"></typeparam>
         /// <param name="columns">The columns.</param>
         /// <returns>System.String.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static string ToODataFilterString<T>(this IEnumerable<RadzenDataGridColumn<T>> columns) where T : notnull
         {
             var columnsWithFilter = GetFilterableColumns(columns);
@@ -1357,6 +1634,7 @@ namespace Radzen
         /// <param name="source">The source.</param>
         /// <param name="columns">The columns.</param>
         /// <returns>IQueryable&lt;T&gt;.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable<T> Where<T>(this IQueryable<T> source, IEnumerable<RadzenDataGridColumn<T>> columns) where T : notnull
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -1395,7 +1673,7 @@ namespace Radzen
 
             var columnsWithCustomFilter = columns.Where(canFilterCustom).ToList();
 
-            if (columnsToFilter.Count > 0)
+            if (columnsWithCustomFilter.Count > 0)
             {
                 var expressions = columnsWithCustomFilter.Select(c => (c.GetCustomFilterExpression() ?? "").Replace(" or ", " || ", StringComparison.Ordinal).Replace(" and ", " && ", StringComparison.Ordinal)).Where(e => !string.IsNullOrEmpty(e)).ToList();
                 source = expressions.Count > 0 ?
@@ -1412,6 +1690,7 @@ namespace Radzen
         /// <param name="source">The source.</param>
         /// <param name="dataFilter">The DataFilter.</param>
         /// <returns>IQueryable&lt;T&gt;.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable<T> Where<T>(this IQueryable<T> source, RadzenDataFilter<T> dataFilter)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -1462,6 +1741,7 @@ namespace Radzen
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <returns>IQueryable&lt;T&gt;.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable<T> Where<T>(this IQueryable<T> source, IEnumerable<CompositeFilterDescriptor> filters, LogicalFilterOperator logicalFilterOperator, FilterCaseSensitivity filterCaseSensitivity)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -1508,6 +1788,7 @@ namespace Radzen
             return source;
         }
 
+        [RequiresUnreferencedCode(ReflectionWarning)]
         private static void AddWhereExpression<T>(ParameterExpression parameter, CompositeFilterDescriptor filter, ref List<Expression> filterExpressions, FilterCaseSensitivity filterCaseSensitivity)
         {
             if (filter.Filters != null)
@@ -1574,6 +1855,7 @@ namespace Radzen
         /// <param name="op">The StringFilterOperator.</param>
         /// <param name="cs">The FilterCaseSensitivity.</param>
         /// <returns>IQueryable&lt;T&gt;.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static IQueryable Where(this IQueryable source, string property, string? value, StringFilterOperator op, FilterCaseSensitivity cs)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -1602,30 +1884,48 @@ namespace Radzen
                     propertyExpression = Expression.Call(string.IsNullOrEmpty(property) && inMemory ? notNullCheck(parameter) : notNullCheck(propertyExpression), "ToString", Type.EmptyTypes);
                 }
 
-                if (ignoreCase && propertyExpression != null)
+                // EF can't translate the StringComparison overloads, so only an in-memory source uses them.
+                var useOrdinal = ignoreCase && inMemory;
+
+                if (ignoreCase && !useOrdinal && propertyExpression != null)
                 {
                     propertyExpression = Expression.Call(notNullCheck(propertyExpression!), "ToLower", Type.EmptyTypes);
                 }
 
-                var constantExpression = Expression.Constant(ignoreCase ? value.ToLower(CultureInfo.InvariantCulture) : value, typeof(string));
+                var constantExpression = Expression.Constant(!ignoreCase || useOrdinal ? value : value.ToLower(CultureInfo.InvariantCulture), typeof(string));
                 Expression? comparisonExpression = null;
 
                 if (propertyExpression != null)
                 {
-                    switch (op)
+                    if (useOrdinal)
                     {
-                        case StringFilterOperator.Contains:
-                            comparisonExpression = Expression.Call(notNullCheck(propertyExpression), "Contains", null, constantExpression);
-                            break;
-                        case StringFilterOperator.StartsWith:
-                            comparisonExpression = Expression.Call(notNullCheck(propertyExpression), "StartsWith", null, constantExpression);
-                            break;
-                        case StringFilterOperator.EndsWith:
-                            comparisonExpression = Expression.Call(notNullCheck(propertyExpression), "EndsWith", null, constantExpression);
-                            break;
-                        default:
-                            comparisonExpression = Expression.Equal(propertyExpression, constantExpression);
-                            break;
+                        var ordinal = Expression.Constant(StringComparison.OrdinalIgnoreCase);
+                        var target = notNullCheck(propertyExpression);
+                        comparisonExpression = op switch
+                        {
+                            StringFilterOperator.Contains => Expression.Call(target, StringContainsComparison, constantExpression, ordinal),
+                            StringFilterOperator.StartsWith => Expression.Call(target, StringStartsWithComparison, constantExpression, ordinal),
+                            StringFilterOperator.EndsWith => Expression.Call(target, StringEndsWithComparison, constantExpression, ordinal),
+                            _ => Expression.Call(target, StringEqualsComparison, constantExpression, ordinal),
+                        };
+                    }
+                    else
+                    {
+                        switch (op)
+                        {
+                            case StringFilterOperator.Contains:
+                                comparisonExpression = Expression.Call(notNullCheck(propertyExpression), "Contains", null, constantExpression);
+                                break;
+                            case StringFilterOperator.StartsWith:
+                                comparisonExpression = Expression.Call(notNullCheck(propertyExpression), "StartsWith", null, constantExpression);
+                                break;
+                            case StringFilterOperator.EndsWith:
+                                comparisonExpression = Expression.Call(notNullCheck(propertyExpression), "EndsWith", null, constantExpression);
+                                break;
+                            default:
+                                comparisonExpression = Expression.Equal(propertyExpression, constantExpression);
+                                break;
+                        }
                     }
                 }
 
@@ -1651,6 +1951,7 @@ namespace Radzen
         /// </summary>
         /// <param name="dataFilter">The DataFilter.</param>
         /// <returns>System.String.</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static string ToODataFilterString<T>(this RadzenDataFilter<T> dataFilter)
         {
             ArgumentNullException.ThrowIfNull(dataFilter);
@@ -1691,6 +1992,7 @@ namespace Radzen
         /// <param name="logicalFilterOperator">The LogicalFilterOperator</param>
         /// <param name="filterCaseSensitivity">The FilterCaseSensitivity</param>
         /// <returns>A OData-compatible filter string</returns>
+        [RequiresUnreferencedCode(ReflectionWarning)]
         public static string ToODataFilterString<T>(this IEnumerable<CompositeFilterDescriptor> filters,
             LogicalFilterOperator logicalFilterOperator = LogicalFilterOperator.And,
             FilterCaseSensitivity filterCaseSensitivity = FilterCaseSensitivity.Default)
@@ -1720,7 +2022,8 @@ namespace Radzen
             return "";
         }
 
-        private static void AddODataExpression<T>(Func<CompositeFilterDescriptor, bool> canFilter, 
+        [RequiresUnreferencedCode(ReflectionWarning)]
+        private static void AddODataExpression<T>(Func<CompositeFilterDescriptor, bool> canFilter,
             CompositeFilterDescriptor filter, ref List<string> filterExpressions, 
             LogicalFilterOperator logicalFilterOperator = LogicalFilterOperator.And,
             FilterCaseSensitivity filterCaseSensitivity = FilterCaseSensitivity.Default)
@@ -1753,7 +2056,10 @@ namespace Radzen
 
                 var propertyExpression = GetNestedPropertyExpression(parameter, filter.Property);
 
-                if (propertyExpression == null) return;
+                if (propertyExpression == null)
+                {
+                    return;
+                }
 
                 var filterPropertyType = filter.Type ?? propertyExpression.Type;
 
@@ -1800,7 +2106,9 @@ namespace Radzen
                 else
                 {
                     if (IsEnumerable(filterPropertyType) && filterPropertyType != typeof(string))
+                    {
                         return;
+                    }
 
                     var value = $"{filter.FilterValue}";
 

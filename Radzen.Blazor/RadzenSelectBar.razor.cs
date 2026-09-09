@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -40,6 +41,7 @@ namespace Radzen.Blazor
     /// &lt;/RadzenSelectBar&gt;
     /// </code>
     /// </example>
+    [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
     public partial class RadzenSelectBar<TValue> : FormComponent<TValue>, IRadzenSelectBar
     {
         /// <summary>
@@ -59,7 +61,9 @@ namespace Radzen.Blazor
         public Orientation Orientation { get; set; } = Orientation.Horizontal;
 
 
-        string ButtonClass(RadzenSelectBarItem item) => ClassList.Create($"rz-button rz-button-text-only")
+        string ButtonClass(RadzenSelectBarItem item) => ClassList.Create("rz-button")
+                                                                 .Add("rz-button-icon-only", string.IsNullOrEmpty(item.Text) && !string.IsNullOrEmpty(item.Icon))
+                                                                 .Add("rz-button-text-only", !string.IsNullOrEmpty(item.Text) || string.IsNullOrEmpty(item.Icon))
                                                                  .AddButtonSize(Size)
                                                                  .Add("rz-state-active", IsSelected(item))
                                                                  .Add("rz-state-focused", IsFocused(item) && focused)
@@ -110,7 +114,18 @@ namespace Radzen.Blazor
         {
             base.OnParametersSet();
 
+            // ShouldRender is skipped for the first render.
+            selection.Invalidate();
+
             UpdateAllItems();
+        }
+
+        /// <inheritdoc />
+        protected override bool ShouldRender()
+        {
+            // Bound collections may mutate in place between renders.
+            selection.Invalidate();
+            return base.ShouldRender();
         }
 
         void UpdateAllItems()
@@ -118,8 +133,8 @@ namespace Radzen.Blazor
             allItems = items.Concat((Data != null ? Data.Cast<object>() : Enumerable.Empty<object>()).Select(i =>
             {
                 var item = new RadzenSelectBarItem();
-                item.SetText($"{PropertyAccess.GetItemOrValueFromProperty(i, TextProperty ?? string.Empty)}");
-                item.SetValue(PropertyAccess.GetItemOrValueFromProperty(i, ValueProperty ?? string.Empty)!);
+                item.SetText($"{PropertyAccess.GetItemProperty(i, TextProperty)}");
+                item.SetValue(PropertyAccess.GetItemProperty(i, ValueProperty)!);
                 return item;
             })).ToList();
         }
@@ -136,6 +151,20 @@ namespace Radzen.Blazor
         /// <value><c>true</c> if multiple; otherwise, <c>false</c>.</value>
         [Parameter]
         public bool Multiple { get; set; }
+
+        /// <summary>
+        /// Gets or sets the aria-label of the toolbar. Provides an accessible name for the select bar.
+        /// </summary>
+        /// <value>The aria-label.</value>
+        [Parameter]
+        public string? AriaLabel { get; set; }
+
+        /// <summary>
+        /// Gets or sets the aria-labelledby of the select bar. References the id of a visible element that labels the group.
+        /// </summary>
+        /// <value>The aria-labelledby.</value>
+        [Parameter]
+        public string? AriaLabelledBy { get; set; }
 
         /// <summary>
         /// Gets or sets the items.
@@ -176,6 +205,8 @@ namespace Radzen.Blazor
             }
         }
 
+        readonly SelectionMembership selection = new();
+
         /// <summary>
         /// Determines whether the specified item is selected.
         /// </summary>
@@ -186,7 +217,12 @@ namespace Radzen.Blazor
             ArgumentNullException.ThrowIfNull(item);
             if (Multiple)
             {
-                return Value != null && ((IEnumerable)Value).Cast<object>().Contains(item.Value);
+                if (Value == null)
+                {
+                    return false;
+                }
+
+                return selection.Contains(Value as IEnumerable, item.Value);
             }
             else
             {
@@ -214,9 +250,11 @@ namespace Radzen.Blazor
         {
             ArgumentNullException.ThrowIfNull(item);
             if (Disabled || item.Disabled)
+            {
                 return;
+            }
 
-            focusedIndex = allItems.IndexOf(item);
+            focusedIndex = NavigableItems.IndexOf(item);
 
             if (Multiple)
             {
@@ -255,6 +293,7 @@ namespace Radzen.Blazor
         /// </summary>
         public void Refresh()
         {
+            selection.Invalidate();
             StateHasChanged();
         }
 
@@ -262,43 +301,85 @@ namespace Radzen.Blazor
         int focusedIndex = -1;
         bool preventKeyPress = true;
         bool stopKeydownPropagation;
+
+        List<RadzenSelectBarItem> NavigableItems => allItems.Where(i => i.Visible).ToList();
+
         async Task OnKeyPress(KeyboardEventArgs args)
         {
             var key = args.Code != null ? args.Code : args.Key;
 
-            var item = allItems.ElementAtOrDefault(focusedIndex) ?? allItems.FirstOrDefault();
+            var navigableItems = NavigableItems;
 
-            if (item == null) return;
+            if (navigableItems.Count == 0)
+            {
+                return;
+            }
 
-            if (key == "ArrowLeft" || key == "ArrowRight")
+            if (key == "ArrowLeft" || key == "ArrowRight" || key == "ArrowUp" || key == "ArrowDown")
             {
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
 
-                var direction = key == "ArrowLeft" ? -1 : 1;
+                var direction = key == "ArrowLeft" || key == "ArrowUp" ? -1 : 1;
 
-                focusedIndex = Math.Clamp(focusedIndex + direction, 0, allItems.FindLastIndex(t => t.Visible && !t.Disabled));
+                var start = focusedIndex < 0 ? 0 : focusedIndex;
+                var next = start;
 
-                while (allItems.ElementAtOrDefault(focusedIndex)?.Disabled == true)
+                for (var step = 0; step < navigableItems.Count; step++)
                 {
-                    focusedIndex = focusedIndex + direction;
-                }               
+                    next = (next + direction + navigableItems.Count) % navigableItems.Count;
+
+                    if (!navigableItems[next].Disabled)
+                    {
+                        break;
+                    }
+                }
+
+                if (!navigableItems[next].Disabled)
+                {
+                    focusedIndex = next;
+
+                    if (!Multiple && !IsSelected(navigableItems[focusedIndex]))
+                    {
+                        await SelectItem(navigableItems[focusedIndex]);
+                    }
+                }
             }
             else if (key == "Home" || key == "End")
             {
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
 
-                focusedIndex = key == "Home" ? 0 : allItems.Where(t => HasInvisibleBefore(item) ? true : t.Visible).Count() - 1;
+                if (key == "Home")
+                {
+                    var index = navigableItems.FindIndex(t => !t.Disabled);
+                    if (index >= 0)
+                    {
+                        focusedIndex = index;
+                    }
+                }
+                else
+                {
+                    var index = navigableItems.FindLastIndex(t => !t.Disabled);
+                    if (index >= 0)
+                    {
+                        focusedIndex = index;
+                    }
+                }
+
+                if (!Multiple && focusedIndex >= 0 && focusedIndex < navigableItems.Count && !navigableItems[focusedIndex].Disabled && !IsSelected(navigableItems[focusedIndex]))
+                {
+                    await SelectItem(navigableItems[focusedIndex]);
+                }
             }
             else if (key == "Space" || key == "Enter")
             {
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
 
-                if (focusedIndex >= 0 && focusedIndex < allItems.Where(t => HasInvisibleBefore(item) ? true : t.Visible).Count())
+                if (focusedIndex >= 0 && focusedIndex < navigableItems.Count)
                 {
-                    await SelectItem(allItems.Where(t => HasInvisibleBefore(item) ? true : t.Visible).ToList()[focusedIndex]);
+                    await SelectItem(navigableItems[focusedIndex]);
                 }
             }
             else
@@ -308,24 +389,38 @@ namespace Radzen.Blazor
             }
         }
 
-        bool HasInvisibleBefore(RadzenSelectBarItem item)
-        {
-            return allItems.Take(allItems.IndexOf(item)).Any(t => !t.Visible && !t.Disabled);
-        }
-
         bool IsFocused(RadzenSelectBarItem item)
         {
-            return allItems.ToList().IndexOf(item) == focusedIndex;
+            return NavigableItems.IndexOf(item) == focusedIndex;
+        }
+
+        string? ActiveDescendantId
+        {
+            get
+            {
+                var navigableItems = NavigableItems;
+                return focused && focusedIndex >= 0 && focusedIndex < navigableItems.Count
+                    ? navigableItems[focusedIndex].GetItemId()
+                    : null;
+            }
         }
 
         void OnFocus()
         {
-            focusedIndex = focusedIndex == -1 ? 0 : focusedIndex;
+            if (focusedIndex == -1)
+            {
+                var navigableItems = NavigableItems;
+                var index = navigableItems.FindIndex(t => !t.Disabled);
+                focusedIndex = index >= 0 ? index : 0;
+            }
+
             focused = true;
+            StateHasChanged();
         }
         void OnBlur()
         {
             focused = false;
+            StateHasChanged();
         }
     }
 }
