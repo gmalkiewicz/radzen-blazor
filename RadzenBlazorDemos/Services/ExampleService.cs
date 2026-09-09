@@ -612,6 +612,22 @@ namespace RadzenBlazorDemos
                         },
                         new Example
                         {
+                            Name = "CheckBoxList with Lookup",
+                            Path = "datagrid-checkboxlist-lookup-filter",
+                            Title = "Blazor DataGrid - CheckBoxList Filter with Lookup Data | Free UI Components by Radzen",
+                            Description = "Drive the CheckBoxList filter from a lookup data source: filter by id while showing and searching by name.",
+                            Tags = new [] { "checkboxlist", "lookup", "filter", "filtering", "datagrid", "table", "dataview" }
+                        },
+                        new Example
+                        {
+                            Name = "CheckBoxList Auto-Apply",
+                            Path = "datagrid-checkboxlist-auto-apply-filter",
+                            Title = "Blazor DataGrid - CheckBoxList Filter Auto-Apply | Free UI Components by Radzen",
+                            Description = "Apply CheckBoxList column filters immediately as options are selected, without the Apply button.",
+                            Tags = new [] { "checkboxlist", "auto", "apply", "filter", "filtering", "datagrid", "table", "dataview" }
+                        },
+                        new Example
+                        {
                             Name = "CheckBoxList with OData",
                             Path = "datagrid-checkboxlist-filter-odata",
                             Title = "Blazor DataGrid - Excel Filter with OData | Free UI Components by Radzen",
@@ -772,6 +788,14 @@ namespace RadzenBlazorDemos
                             Title = "Blazor DataGrid - Sort API | Free UI Components by Radzen",
                             Description = "Set the initial sort order of your RadzenDataGrid via the SortOrder column property.",
                             Tags = new [] { "api", "sort", "datagrid", "table", "dataview" }
+                        },
+                        new Example
+                        {
+                            Name = "Custom Sort Comparer",
+                            Path = "datagrid-sort-comparer",
+                            Title = "Blazor DataGrid - Custom Sort Comparer | Free UI Components by Radzen",
+                            Description = "Sort a column with a custom IComparer, for example ordering id values by their mapped display name.",
+                            Tags = new [] { "comparer", "custom", "sort", "datagrid", "table", "dataview" }
                         }
                     }
                 },
@@ -1620,7 +1644,7 @@ namespace RadzenBlazorDemos
                 },
                 new Example
                 {
-                    Toc = [ new () { Text = "Get and Set the value of AutoComplete", Anchor = "#get-set-value" }, new () { Text = "Get and Set the value of AutoComplete using Value and Change event", Anchor = "#value-and-change-event" }, new () { Text = "Get the selected item of AutoComplete", Anchor = "#get-selected" }, new () { Text = "Define AutoComplete placeholder", Anchor = "#placeholder" }, new () { Text = "Define AutoComplete template", Anchor = "#template" }, new () { Text = "Change AutoComplete filter operator, case sensitivity and delay", Anchor = "#filter-operator" }, new () { Text = "Load data on-demand in AutoComplete and apply custom filter and sort", Anchor = "#load-on-demand" }, new () { Text = "AutoComplete with a List of Strings", Anchor = "#list-of-strings" }, new () { Text = "Multiline AutoComplete", Anchor = "#multiline" }, new () { Text = "Open on Focus", Anchor = "#open-on-focus" }, new () { Text = "Disabled AutoComplete", Anchor = "#disabled-autocomplete" }, new () { Text = "Keyboard Navigation", Anchor = "#keyboard-navigation" } ],
+                    Toc = [ new () { Text = "Get and Set the value of AutoComplete", Anchor = "#get-set-value" }, new () { Text = "Get and Set the value of AutoComplete using Value and Change event", Anchor = "#value-and-change-event" }, new () { Text = "Get the selected item of AutoComplete", Anchor = "#get-selected" }, new () { Text = "Define AutoComplete placeholder", Anchor = "#placeholder" }, new () { Text = "Define AutoComplete template", Anchor = "#template" }, new () { Text = "Change AutoComplete filter operator, case sensitivity and delay", Anchor = "#filter-operator" }, new () { Text = "Load data on-demand in AutoComplete and apply custom filter and sort", Anchor = "#load-on-demand" }, new () { Text = "Empty and Loading templates", Anchor = "#empty-and-loading-templates" }, new () { Text = "AutoComplete with a List of Strings", Anchor = "#list-of-strings" }, new () { Text = "Multiline AutoComplete", Anchor = "#multiline" }, new () { Text = "Open on Focus", Anchor = "#open-on-focus" }, new () { Text = "Disabled AutoComplete", Anchor = "#disabled-autocomplete" }, new () { Text = "Keyboard Navigation", Anchor = "#keyboard-navigation" } ],
                     Name = "AutoComplete",
                     Path = "autocomplete",
                     Description = "Demonstration and configuration of the Radzen Blazor AutoComplete textbox component.",

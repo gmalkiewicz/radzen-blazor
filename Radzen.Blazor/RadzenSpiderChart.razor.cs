@@ -581,6 +581,19 @@ namespace Radzen.Blazor
         {
             return $"rz-spider-chart rz-scheme-{ColorScheme.ToString().ToLowerInvariant()}";
         }
+
+        /// <inheritdoc />
+        public override void Dispose()
+        {
+            if (IsJSRuntimeAvailable && JSRuntime != null)
+            {
+                JSRuntime.InvokeVoidAsync("Radzen.destroyResizable", Element);
+            }
+
+            base.Dispose();
+
+            GC.SuppressFinalize(this);
+        }
     }
 
     /// <summary>

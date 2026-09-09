@@ -218,10 +218,16 @@ namespace Radzen.Blazor
         public string? MultipleUsersTypingFormat { get; set; } = "{0} and {1} others are typing...";
 
         /// <summary>
-        /// Gets or sets the title displayed in the chat header.
+        /// Gets or sets the title displayed in the chat header. <see cref="TitleContent" /> has preference over this property.
         /// </summary>
         [Parameter]
         public string? Title { get; set; }
+
+        /// <summary>
+        /// Gets or sets the custom title content rendered in the chat header.
+        /// </summary>
+        [Parameter]
+        public RenderFragment? TitleContent { get; set; }
 
         /// <summary>
         /// Gets or sets the placeholder text for the input field.
@@ -240,6 +246,30 @@ namespace Radzen.Blazor
         /// </summary>
         [Parameter]
         public string NewMessagesText { get; set; } = "New messages";
+
+        /// <summary>
+        /// Gets or sets the format used to render the timestamp shown next to each message. Defaults to <c>"HH:mm"</c>.
+        /// </summary>
+        [Parameter]
+        public string TimestampFormat { get; set; } = "HH:mm";
+
+        /// <summary>
+        /// Gets or sets whether a date separator is rendered between messages when the day changes.
+        /// </summary>
+        [Parameter]
+        public bool ShowDateSeparator { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the format used to render the date separator. Defaults to <c>"D"</c> (long date pattern).
+        /// </summary>
+        [Parameter]
+        public string DateSeparatorFormat { get; set; } = "D";
+
+        /// <summary>
+        /// Optional template to render the date separator shown between messages when the day changes. Receives the <see cref="DateTime"/> of the following message.
+        /// </summary>
+        [Parameter]
+        public RenderFragment<DateTime>? DateSeparatorTemplate { get; set; }
 
         /// <summary>
         /// Gets or sets whether to show participant names above messages.

@@ -726,22 +726,33 @@ window.Radzen = {
   selectTab: function (id, index) {
     var el = document.getElementById(id);
     if (el && el.parentNode && el.parentNode.previousElementSibling) {
+        var tablist = el.parentNode.previousElementSibling;
         var count = el.parentNode.children.length;
         for (var i = 0; i < count; i++) {
             var content = el.parentNode.children[i];
             if (content) {
                 content.style.display = i == index ? '' : 'none';
+                content.setAttribute('aria-hidden', i == index ? 'false' : 'true');
             }
-            var header = el.parentNode.previousElementSibling.children[i];
+            var header = tablist.children[i];
             if (header) {
+                var btn = header.querySelector('[role="tab"]') || header;
                 if (i == index) {
                     header.classList.add('rz-tabview-selected');
                     header.classList.add('rz-state-focused');
+                    btn.setAttribute('aria-selected', 'true');
                 }
                 else {
                     header.classList.remove('rz-tabview-selected');
                     header.classList.remove('rz-state-focused');
+                    btn.setAttribute('aria-selected', 'false');
                 }
+            }
+        }
+        if (tablist.getAttribute && tablist.getAttribute('role') === 'tablist') {
+            var activeBtn = tablist.children[index] && (tablist.children[index].querySelector('[role="tab"]') || tablist.children[index]);
+            if (activeBtn && activeBtn.id) {
+                tablist.setAttribute('aria-activedescendant', activeBtn.id);
             }
         }
     }
@@ -1289,6 +1300,41 @@ window.Radzen = {
         el.scrollIntoView();
     }
   },
+  updateActiveDescendant: function (ul, li, index) {
+    if (!ul) return;
+    // The popup is appended to document.body when opened, so ul.closest('[role="combobox"]')
+    // fails once the dropdown is open. Fall back to a reverse lookup via aria-controls.
+    // There can be more than one combobox referencing the same listbox (the trigger and a
+    // filter input inside the popup), so update them all so screen readers announce the
+    // active option regardless of which element currently has focus.
+    var comboboxes = [];
+    var ancestor = ul.closest('[role="combobox"]');
+    if (ancestor) {
+      comboboxes.push(ancestor);
+    }
+    if (ul.id && window.CSS && CSS.escape) {
+      var escapedId = CSS.escape(ul.id);
+      var matches = document.querySelectorAll(
+        '[aria-controls="' + escapedId + '"][role="combobox"]'
+      );
+      for (var i = 0; i < matches.length; i++) {
+        if (comboboxes.indexOf(matches[i]) === -1) {
+          comboboxes.push(matches[i]);
+        }
+      }
+    }
+    if (li) {
+      var itemId = ul.id + '-' + index;
+      li.id = itemId;
+      for (var j = 0; j < comboboxes.length; j++) {
+        comboboxes[j].setAttribute('aria-activedescendant', itemId);
+      }
+    } else {
+      for (var k = 0; k < comboboxes.length; k++) {
+        comboboxes[k].removeAttribute('aria-activedescendant');
+      }
+    }
+  },
   selectListItem: function (input, ul, index) {
     if (!input || !ul) return;
 
@@ -1309,6 +1355,9 @@ window.Radzen = {
     ) {
       childNodes[ul.nextSelectedIndex].classList.add('rz-state-highlight');
       childNodes[ul.nextSelectedIndex].scrollIntoView({block:'nearest'});
+      Radzen.updateActiveDescendant(ul, childNodes[ul.nextSelectedIndex], ul.nextSelectedIndex);
+    } else {
+      Radzen.updateActiveDescendant(ul, null, -1);
     }
   },
   focusListItem: function (input, ul, isDown, startIndex) {
@@ -1349,6 +1398,9 @@ window.Radzen = {
     ) {
       childNodes[ul.nextSelectedIndex].classList.add('rz-state-highlight');
       Radzen.scrollIntoViewIfNeeded(childNodes[ul.nextSelectedIndex]);
+      Radzen.updateActiveDescendant(ul, childNodes[ul.nextSelectedIndex], ul.nextSelectedIndex);
+    } else {
+      Radzen.updateActiveDescendant(ul, null, -1);
     }
 
     return ul.nextSelectedIndex;
@@ -1400,6 +1452,9 @@ window.Radzen = {
       if (relativeIndex >= 0 && relativeIndex < lis.length) {
         lis[relativeIndex].classList.add('rz-state-highlight');
         lis[relativeIndex].scrollIntoView({ block: 'nearest' });
+        Radzen.updateActiveDescendant(ul, lis[relativeIndex], absoluteIndex);
+      } else {
+        Radzen.updateActiveDescendant(ul, null, -1);
       }
     }
 
@@ -1504,6 +1559,14 @@ window.Radzen = {
         }
     }
 
+    var activeId = gridId + '-active-item';
+    var setActiveDescendant = function (el) {
+        var prev = document.getElementById(activeId);
+        if (prev && prev !== el) { prev.removeAttribute('id'); }
+        if (el && el.id !== activeId) { el.id = activeId; }
+        if (el) { grid.setAttribute('aria-activedescendant', activeId); }
+    };
+
     if (key == 'ArrowLeft' || key == 'ArrowRight' || (key == 'ArrowUp' && cellIndex != null && table.nextSelectedIndex == 0 && table.parentNode.scrollTop == 0)) {
         var highlightedCells = rows[table.nextSelectedIndex].querySelectorAll('.rz-state-focused');
         if (highlightedCells.length) {
@@ -1524,6 +1587,7 @@ window.Radzen = {
                     Radzen.scrollIntoViewIfNeeded(cell);
                 }
             }
+            setActiveDescendant(cell);
         }
     } else if (key == 'ArrowDown' || key == 'ArrowUp') {
         var highlighted = table.querySelectorAll('.rz-state-focused');
@@ -1544,6 +1608,7 @@ window.Radzen = {
                     Radzen.scrollIntoViewIfNeeded(row);
                 }
             }
+            setActiveDescendant(row);
         }
     }
 
@@ -2166,11 +2231,15 @@ window.Radzen = {
 
     if (!position) {
         var popupRect = popup.getBoundingClientRect();
-        if (popupRect.right > window.innerWidth && popupRect.width < window.innerWidth) {
-            popup.style.left = (window.innerWidth - popupRect.width + scrollLeft) + 'px';
+        // Clamp into the viewport. If the popup is smaller than the viewport, shift it
+        // so its right/bottom edge fits. If it is larger than the viewport, pin the
+        // top/left corner to the viewport origin so content is at least reachable
+        // (instead of leaving it positioned off-screen at the anchor).
+        if (popupRect.right > window.innerWidth) {
+            popup.style.left = Math.max(scrollLeft, window.innerWidth - popupRect.width + scrollLeft) + 'px';
         }
-        if (popupRect.bottom > window.innerHeight && popupRect.height < window.innerHeight) {
-            popup.style.top = (window.innerHeight - popupRect.height + scrollTop) + 'px';
+        if (popupRect.bottom > window.innerHeight) {
+            popup.style.top = Math.max(scrollTop, window.innerHeight - popupRect.height + scrollTop) + 'px';
         }
     }
 
@@ -2181,6 +2250,40 @@ window.Radzen = {
     document.addEventListener('mousedown', Radzen[id]);
     window.removeEventListener('resize', Radzen[id]);
     window.addEventListener('resize', Radzen[id]);
+
+    if (window.visualViewport && parent &&
+        (popup.classList.contains('rz-dropdown-panel') || popup.classList.contains('rz-multiselect-panel'))) {
+        var itemsWrapper = popup.querySelector('.rz-dropdown-items-wrapper, .rz-multiselect-items-wrapper');
+        if (itemsWrapper) {
+            popup.__originalWrapperMaxHeight = itemsWrapper.style.maxHeight;
+            popup.__originalPopupTop = popup.style.top;
+            popup.__viewportResizeHandler = function () {
+                if (popup.style.display !== 'block') return;
+                var vv = window.visualViewport;
+                var viewportTop = vv.offsetTop;
+                var viewportBottom = viewportTop + vv.height;
+                var pRect = parent.getBoundingClientRect();
+                var popRect = popup.getBoundingClientRect();
+                if (popRect.top >= viewportTop - 1 && popRect.bottom <= viewportBottom + 1) {
+                    itemsWrapper.style.maxHeight = popup.__originalWrapperMaxHeight;
+                    popup.style.top = popup.__originalPopupTop;
+                    return;
+                }
+                var spaceBelow = viewportBottom - pRect.bottom - 5;
+                var spaceAbove = pRect.top - viewportTop - 5;
+                var sTop = /Edge/.test(navigator.userAgent) ? document.body.scrollTop : document.documentElement.scrollTop;
+                if (spaceBelow >= spaceAbove) {
+                    popup.style.top = (pRect.bottom + sTop) + 'px';
+                    itemsWrapper.style.maxHeight = Math.max(60, spaceBelow) + 'px';
+                } else {
+                    itemsWrapper.style.maxHeight = Math.max(60, spaceAbove) + 'px';
+                    var newHeight = popup.getBoundingClientRect().height;
+                    popup.style.top = (pRect.top - newHeight + sTop) + 'px';
+                }
+            };
+            window.visualViewport.addEventListener('resize', popup.__viewportResizeHandler);
+        }
+    }
 
     var p = parent;
     while (p && p != document.body) {
@@ -2216,8 +2319,18 @@ window.Radzen = {
         if (e.key === 'Escape' || e.key === 'Esc') {
             Radzen.closePopup(id, instance, callback, e);
         }
-        if (e.key === 'Tab' && parent) {
+        if (e.key === 'Tab' && parent && (popup.classList.contains('rz-dropdown-panel') || popup.classList.contains('rz-multiselect-panel'))) {
             e.preventDefault();
+        }
+        if (e.key === 'Tab' && !e.shiftKey) {
+            var timepicker = popup.querySelector('.rz-timepicker');
+            if (timepicker) {
+                var focusable = Radzen.getFocusableElements(timepicker);
+                var last = focusable[focusable.length - 1];
+                if (last && document.activeElement === last) {
+                    Radzen.closePopup(id, instance, callback, e);
+                }
+            }
         }
     };
     popup.addEventListener('keydown', popup.__escapeHandler, true);
@@ -2244,6 +2357,10 @@ window.Radzen = {
     var popupInfo = (Radzen.popups || []).find(function (p) { return p.id === id; });
     if (popupInfo && popupInfo.parent) {
       Radzen.setPopupAriaExpanded(popupInfo.parent, id, false);
+      var combobox = popupInfo.parent.closest('[role="combobox"]');
+      if (combobox) {
+        combobox.removeAttribute('aria-activedescendant');
+      }
     }
     if (popup.style.display == 'none') {
         var popups = Radzen.findPopup(id);
@@ -2281,6 +2398,18 @@ window.Radzen = {
         popup.removeEventListener('keydown', popup.__escapeHandler, true);
         delete popup.__escapeHandler;
     }
+    if (popup && popup.__viewportResizeHandler) {
+        if (window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', popup.__viewportResizeHandler);
+        }
+        var wrapperToReset = popup.querySelector('.rz-dropdown-items-wrapper, .rz-multiselect-items-wrapper');
+        if (wrapperToReset && popup.__originalWrapperMaxHeight !== undefined) {
+            wrapperToReset.style.maxHeight = popup.__originalWrapperMaxHeight;
+        }
+        delete popup.__viewportResizeHandler;
+        delete popup.__originalWrapperMaxHeight;
+        delete popup.__originalPopupTop;
+    }
     document.removeEventListener('mousedown', Radzen[id]);
     window.removeEventListener('resize', Radzen[id]);
     Radzen[id] = null;
@@ -2299,8 +2428,9 @@ window.Radzen = {
     if (!preventFocusRestore &&
         (Radzen.activeElement && Radzen.activeElement == document.activeElement ||
         Radzen.activeElement && document.activeElement == document.body ||
+        Radzen.activeElement && popup && popup.contains(document.activeElement) ||
         Radzen.activeElement && document.activeElement &&
-            (document.activeElement.classList.contains('rz-dropdown-filter') || 
+            (document.activeElement.classList.contains('rz-dropdown-filter') ||
              document.activeElement.classList.contains('rz-lookup-search-input') ||
              document.activeElement.classList.contains('rz-multiselect-filter-container') ||
              document.activeElement.closest('.rz-multiselect-filter-container') !== null))) {
@@ -2338,7 +2468,9 @@ window.Radzen = {
           popup.removeEventListener('keydown', popup.__escapeHandler, true);
           delete popup.__escapeHandler;
       }
-      popup.parentNode.removeChild(popup);
+      if (popup.parentNode === document.body) {
+          document.body.removeChild(popup);
+      }
     }
     document.removeEventListener('mousedown', Radzen[id]);
   },
@@ -2668,6 +2800,37 @@ window.Radzen = {
       input.value = value;
     }
   },
+  getSelectionRange: function (arg) {
+    var input =
+      arg instanceof Element || arg instanceof HTMLDocument
+        ? arg
+        : document.getElementById(arg);
+    if (!input) return null;
+    try {
+      if (input.selectionStart === null || input.selectionStart === undefined) return null;
+      return [input.selectionStart, input.selectionEnd];
+    } catch (e) {
+      return null;
+    }
+  },
+  setSelectionRange: function (arg, start, end) {
+    var input =
+      arg instanceof Element || arg instanceof HTMLDocument
+        ? arg
+        : document.getElementById(arg);
+    if (!input) return;
+    var max = input.value ? input.value.length : 0;
+    var s = Math.max(0, Math.min(start, max));
+    var e = Math.max(0, Math.min(end, max));
+    try {
+      if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(s, e);
+      } else {
+        input.selectionStart = s;
+        input.selectionEnd = e;
+      }
+    } catch (ex) { }
+  },
   blur: function (el, e) { 
     if (el) {
         e.preventDefault();
@@ -2753,36 +2916,51 @@ window.Radzen = {
           children.classList.add('rz-open');
           children.classList.remove('rz-close');
 
+          var isRtl = getComputedStyle(item).direction === 'rtl';
+          var el = item.parentElement;
+          var scrollParent = null;
+          while (el && el !== document.body) {
+            var s = getComputedStyle(el);
+            if (s.overflowX === 'auto' || s.overflowX === 'scroll' || s.overflowX === 'hidden') {
+              scrollParent = el;
+              break;
+            }
+            el = el.parentElement;
+          }
+
           if (children.hasAttribute('data-flyout')) {
             children.removeAttribute('data-flyout-flip');
-            var childWidth = children.offsetWidth || 0;
+            var childRect = children.getBoundingClientRect();
             var itemRect = item.getBoundingClientRect();
-            var isRtl = getComputedStyle(item).direction === 'rtl';
-            var el = item.parentElement;
-            var scrollParent = null;
-            while (el && el !== document.body) {
-              var s = getComputedStyle(el);
-              if (s.overflowX === 'auto' || s.overflowX === 'scroll' || s.overflowX === 'hidden') {
-                scrollParent = el;
-                break;
-              }
-              el = el.parentElement;
-            }
             if (isRtl) {
               var leftBoundary = scrollParent ? scrollParent.getBoundingClientRect().left : 0;
-              if (itemRect.left - childWidth < leftBoundary) {
+              if (itemRect.left - childRect.width < leftBoundary) {
                 children.setAttribute('data-flyout-flip', '');
               }
             } else {
               var rightBoundary = scrollParent ? scrollParent.getBoundingClientRect().right : document.documentElement.clientWidth;
-              if (itemRect.right + childWidth > rightBoundary) {
+              if (itemRect.right + childRect.width > rightBoundary) {
                 children.setAttribute('data-flyout-flip', '');
               }
             }
           }
+
+          // Shift dropdown left/right if it overflows the scroll parent or viewport
+          children.style.insetInlineStart = children.style.insetInlineStart || '';
+          var childRect = children.getBoundingClientRect();
+          var rightBoundary = scrollParent ? scrollParent.getBoundingClientRect().right : document.documentElement.clientWidth;
+          var leftBoundary = scrollParent ? scrollParent.getBoundingClientRect().left : 0;
+          if (!isRtl && childRect.right > rightBoundary) {
+            var offset = parseFloat(children.style.insetInlineStart) || 0;
+            children.style.insetInlineStart = (offset + rightBoundary - childRect.right) + 'px';
+          } else if (isRtl && childRect.left < leftBoundary) {
+            var offset = parseFloat(children.style.insetInlineStart) || 0;
+            children.style.insetInlineStart = (offset + leftBoundary - childRect.left) + 'px';
+          }
         } else {
           children.onanimationend = function () {
             children.style.display = 'none';
+            children.style.insetInlineStart = '';
             children.onanimationend = null;
           }
           children.classList.remove('rz-open');
@@ -2851,7 +3029,12 @@ window.Radzen = {
     ref.resizeHandler = function () {
       var rect = ref.getBoundingClientRect();
 
-      try { instance.invokeMethodAsync('Resize', rect.width, rect.height); } catch { }
+      try {
+        var promise = instance.invokeMethodAsync('Resize', rect.width, rect.height);
+        if (promise && typeof promise.catch === 'function') {
+          promise.catch(function () { });
+        }
+      } catch { }
     };
 
     if (window.ResizeObserver) {
@@ -3239,7 +3422,7 @@ window.Radzen = {
     document.removeEventListener('touchmove', ref.touchMoveHandler)
     document.removeEventListener('touchend', ref.mouseUpHandler);
   },
-  startColumnReorder: function(id, gridId) {
+  startColumnReorder: function(id, gridId, gridRef) {
       var grid = document.getElementById(gridId);
       var el = document.getElementById(id + '-drag');
       Radzen[id + 'cell'] = el.parentNode.parentNode;
@@ -3251,6 +3434,7 @@ window.Radzen = {
       visual.style.height = Radzen[id + 'cell'].offsetHeight + 'px';
       visual.style.width = Radzen[id + 'cell'].offsetWidth + 'px';
       visual.style.zIndex = 2000;
+      visual.style.pointerEvents = 'none';
       visual.innerHTML = Radzen[id + 'cell'].firstChild.outerHTML;
       visual.id = id + 'visual';
       document.body.appendChild(visual);
@@ -3260,7 +3444,18 @@ window.Radzen = {
           resizers[i].style.display = 'none';
       }
 
+      Radzen[id + 'lastTouchX'] = null;
+      Radzen[id + 'lastTouchY'] = null;
+
       Radzen[id + 'end'] = function (e) {
+          var triggeredByTouch = e && (e.type === 'touchend' || e.type === 'touchcancel');
+          var touchX = Radzen[id + 'lastTouchX'];
+          var touchY = Radzen[id + 'lastTouchY'];
+          if (triggeredByTouch && e.changedTouches && e.changedTouches[0]) {
+              touchX = e.changedTouches[0].clientX;
+              touchY = e.changedTouches[0].clientY;
+          }
+
           var el = document.getElementById(id + 'visual');
           if (el) {
               document.body.removeChild(el);
@@ -3271,12 +3466,35 @@ window.Radzen = {
           }
 
           grid.removeEventListener('mousemove', Radzen[id + 'move']);
+          grid.removeEventListener('touchmove', Radzen[id + 'touchmove']);
           grid.removeEventListener('click', Radzen[id + 'end']);
           document.removeEventListener('mouseup', Radzen[id + 'end']);
           document.removeEventListener('touchend', Radzen[id + 'end']);
+          document.removeEventListener('touchcancel', Radzen[id + 'end']);
 
           Radzen[id + 'end'] = null;
           Radzen[id + 'move'] = null;
+          Radzen[id + 'touchmove'] = null;
+          Radzen[id + 'lastTouchX'] = null;
+          Radzen[id + 'lastTouchY'] = null;
+
+          if (triggeredByTouch && gridRef && touchX != null && touchY != null) {
+              var target = document.elementFromPoint(touchX, touchY);
+              if (target && grid.contains(target)) {
+                  var groupHeader = target.closest('.rz-group-header');
+                  if (groupHeader && grid.contains(groupHeader)) {
+                      try { gridRef.invokeMethodAsync('RadzenGrid.OnColumnDropToGroup'); } catch { }
+                      return;
+                  }
+                  var th = target.closest('th[data-column-index]');
+                  if (th && grid.contains(th)) {
+                      var columnIndex = parseInt(th.getAttribute('data-column-index'), 10);
+                      if (!isNaN(columnIndex)) {
+                          try { gridRef.invokeMethodAsync('RadzenGrid.OnColumnReorderEnded', columnIndex); } catch { }
+                      }
+                  }
+              }
+          }
       }
       grid.removeEventListener('click', Radzen[id + 'end']);
       grid.addEventListener('click', Radzen[id + 'end']);
@@ -3284,6 +3502,8 @@ window.Radzen = {
       document.addEventListener('mouseup', Radzen[id + 'end']);
       document.removeEventListener('touchend', Radzen[id + 'end']);
       document.addEventListener('touchend', Radzen[id + 'end'], { passive: true });
+      document.removeEventListener('touchcancel', Radzen[id + 'end']);
+      document.addEventListener('touchcancel', Radzen[id + 'end'], { passive: true });
 
       Radzen[id + 'move'] = function (e) {
           var el = document.getElementById(id + 'visual');
@@ -3304,6 +3524,19 @@ window.Radzen = {
       }
       grid.removeEventListener('mousemove', Radzen[id + 'move']);
       grid.addEventListener('mousemove', Radzen[id + 'move']);
+
+      Radzen[id + 'touchmove'] = function (e) {
+          if (e.touches && e.touches[0]) {
+              Radzen[id + 'lastTouchX'] = e.touches[0].clientX;
+              Radzen[id + 'lastTouchY'] = e.touches[0].clientY;
+              Radzen[id + 'move']({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+              if (e.cancelable) {
+                  e.preventDefault();
+              }
+          }
+      }
+      grid.removeEventListener('touchmove', Radzen[id + 'touchmove']);
+      grid.addEventListener('touchmove', Radzen[id + 'touchmove'], { passive: false });
   },
   stopColumnResize: function (id, grid, columnIndex) {
     var el = document.getElementById(id + '-resizer');
@@ -3511,6 +3744,7 @@ window.Radzen = {
                     ); } catch { }
 
                     document.removeEventListener('pointerup', Radzen[el].mouseUpHandler);
+                    document.removeEventListener('pointercancel', Radzen[el].mouseUpHandler);
                     document.removeEventListener('pointermove', Radzen[el].mouseMoveHandler);
                     el.removeEventListener('touchmove', preventDefaultAndStopPropagation);
                     Radzen[el] = null;
@@ -3518,6 +3752,11 @@ window.Radzen = {
             },
             mouseMoveHandler: function(e) {
                 if (Radzen[el]) {
+
+                    if (e.buttons === 0) {
+                        Radzen[el].mouseUpHandler(e);
+                        return;
+                    }
 
                     try { splitter.invokeMethodAsync(
                         'RadzenSplitter.OnPaneResizing'
@@ -3571,6 +3810,7 @@ window.Radzen = {
             ev.stopPropagation();
         };
           document.addEventListener('pointerup', Radzen[el].mouseUpHandler);
+          document.addEventListener('pointercancel', Radzen[el].mouseUpHandler);
           document.addEventListener('pointermove', Radzen[el].mouseMoveHandler);
           el.addEventListener('touchmove', preventDefaultAndStopPropagation, { passive: false });
     },
@@ -3746,7 +3986,7 @@ window.Radzen = {
     },
     setTheme: function (href, wcagHref) {
       const theme = document.getElementById('radzen-theme-link');
-      if (theme && theme.href != href) {
+      if (theme && theme.sheet && theme.sheet.href === theme.href && theme.href != href) {
         theme.href = href;
       }
 

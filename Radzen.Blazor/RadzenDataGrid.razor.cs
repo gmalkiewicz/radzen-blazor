@@ -586,6 +586,11 @@ namespace Radzen.Blazor
         int focusedIndex = -1;
         int focusedCellIndex;
 
+        internal string? GetActiveDescendantId()
+        {
+            return $"{GetId()}-active-item";
+        }
+
         internal string? GridId()
         {
             return GetId();
@@ -1607,6 +1612,14 @@ namespace Radzen.Blazor
         public bool AllowFiltering { get; set; }
 
         /// <summary>
+        /// Gets or sets whether CheckBoxList column filters are applied immediately as options are
+        /// selected, instead of requiring the filter popup's Apply button. Default is false.
+        /// </summary>
+        /// <value>True to apply CheckBoxList filters on each selection change; otherwise false.</value>
+        [Parameter]
+        public bool AutoApplyCheckBoxListFilter { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether column resizing is allowed.
         /// </summary>
         /// <value><c>true</c> if column resizing is allowed; otherwise, <c>false</c>.</value>
@@ -1821,7 +1834,17 @@ namespace Radzen.Blazor
             uniqueIDOfColumnToReoder = uniqueID;
             if (JSRuntime != null)
             {
-                await JSRuntime.InvokeVoidAsync("Radzen.startColumnReorder", getColumnUniqueId(columnIndex), GetId());
+                await JSRuntime.InvokeVoidAsync("Radzen.startColumnReorder", getColumnUniqueId(columnIndex), GetId(), Reference);
+            }
+        }
+
+        internal async Task StartColumnReorder(TouchEventArgs args, int columnIndex, string uniqueID)
+        {
+            indexOfColumnToReoder = columnIndex;
+            uniqueIDOfColumnToReoder = uniqueID;
+            if (JSRuntime != null)
+            {
+                await JSRuntime.InvokeVoidAsync("Radzen.startColumnReorder", getColumnUniqueId(columnIndex), GetId(), Reference);
             }
         }
 
@@ -1873,6 +1896,30 @@ namespace Radzen.Blazor
 
                 indexOfColumnToReoder = null;
             }
+        }
+
+        internal async Task EndColumnReorder(TouchEventArgs args, int columnIndex)
+        {
+            await EndColumnReorder((MouseEventArgs)null!, columnIndex);
+        }
+
+        /// <summary>
+        /// Called from JS when a touch-initiated column reorder drop lands on a target column.
+        /// </summary>
+        /// <param name="columnIndex">Index of the destination column.</param>
+        [JSInvokable("RadzenGrid.OnColumnReorderEnded")]
+        public async Task OnColumnReorderEnded(int columnIndex)
+        {
+            await EndColumnReorder((MouseEventArgs)null!, columnIndex);
+        }
+
+        /// <summary>
+        /// Called from JS when a touch-initiated column reorder drop lands on the group panel.
+        /// </summary>
+        [JSInvokable("RadzenGrid.OnColumnDropToGroup")]
+        public async Task OnColumnDropToGroup()
+        {
+            await EndColumnDropToGroup();
         }
 
         /// <summary>
@@ -2021,7 +2068,11 @@ namespace Radzen.Blazor
 
                     if (!string.IsNullOrEmpty(orderBy))
                     {
-                        if (typeof(TItem) == typeof(object))
+                        if (HasSortComparer())
+                        {
+                            view = OrderByComparers(view);
+                        }
+                        else if (typeof(TItem) == typeof(object))
                         {
                             var firstItem = view.FirstOrDefault();
                             if (firstItem != null)
@@ -2066,9 +2117,58 @@ namespace Radzen.Blazor
             }
         }
 
+        RadzenDataGridColumn<TItem>? SortColumn(SortDescriptor descriptor) =>
+            allColumns.FirstOrDefault(c => c.GetSortProperty() == descriptor.Property);
+
+        bool HasSortComparer() => sorts.Any(d => SortColumn(d)?.SortComparer != null);
+
+        static IComparer<object?> ToObjectComparer(IComparer? comparer) =>
+            comparer == null ? Comparer<object?>.Default : Comparer<object?>.Create((a, b) => comparer.Compare(a, b));
+
+        IQueryable<TItem> OrderByComparers(IQueryable<TItem> source)
+        {
+            IOrderedEnumerable<TItem>? ordered = null;
+
+            foreach (var descriptor in sorts)
+            {
+                var column = SortColumn(descriptor);
+                var comparer = ToObjectComparer(column?.SortComparer);
+                Func<TItem, object?> keySelector = item => column != null ? column.GetSortValue(item) : null;
+                var ascending = descriptor.SortOrder != SortOrder.Descending;
+
+                if (ordered == null)
+                {
+                    ordered = ascending
+                        ? source.OrderBy(keySelector, comparer)
+                        : source.OrderByDescending(keySelector, comparer);
+                }
+                else
+                {
+                    ordered = ascending
+                        ? ordered.ThenBy(keySelector, comparer)
+                        : ordered.ThenByDescending(keySelector, comparer);
+                }
+            }
+
+            return (ordered ?? source.AsEnumerable()).AsQueryable();
+        }
+
         internal bool IsVirtualizationAllowed()
         {
             return AllowVirtualization;
+        }
+
+        // Existence probe used by the empty-state guard. Calling Data.Any() directly
+        // would bind to Enumerable.Any() because Data is typed IEnumerable<TItem>, and
+        // for an EF Core IQueryable that opens a DbDataReader on the full, untranslated
+        // SELECT (no EXISTS / LIMIT) just to check MoveNext() once. Detect IQueryable
+        // so Queryable.Any() is used instead, which the provider can translate to a
+        // cheap EXISTS query.
+        internal bool HasAnyData()
+        {
+            if (Data == null) return false;
+            if (Data is IQueryable<TItem> queryable) return queryable.Any();
+            return Data.Any();
         }
 
         IList<TItem>? _value;
@@ -3516,6 +3616,12 @@ namespace Radzen.Blazor
                 {
                     column.ResetSortOrder();
                 }
+
+                var existing = sorts.FirstOrDefault(d => d.Property == oldDescriptor.Property);
+                if (existing != null)
+                {
+                    sorts.Remove(existing);
+                }
             }
             else if (args.Action == NotifyCollectionChangedAction.Reset)
             {
@@ -3523,6 +3629,8 @@ namespace Radzen.Blazor
                 {
                     c.ResetSortOrder();
                 });
+
+                sorts.Clear();
             }
 
             SaveSettings();
