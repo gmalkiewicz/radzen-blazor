@@ -15,6 +15,7 @@ internal interface IFormulaSyntaxNodeVisitor
     void VisitCell(CellSyntaxNode cellSyntaxNode);
     void VisitFunction(FunctionSyntaxNode functionSyntaxNode);
     void VisitRange(RangeSyntaxNode rangeSyntaxNode);
+    void VisitName(NameSyntaxNode nameSyntaxNode);
 }
 
 internal class FormulaSyntaxTree(FormulaSyntaxNode root, List<string> errors)
@@ -111,6 +112,11 @@ abstract class FormulaSyntaxNodeVisitorBase : IFormulaSyntaxNodeVisitor
         Visit(rangeSyntaxNode);
     }
 
+    public virtual void VisitName(NameSyntaxNode nameSyntaxNode)
+    {
+        Visit(nameSyntaxNode);
+    }
+
     protected virtual void Visit(FormulaSyntaxNode node)
     {
     }
@@ -133,6 +139,7 @@ internal enum BinaryOperator
     Minus,
     Multiply,
     Divide,
+    Concat,
     Equals,
     NotEquals,
     LessThan,
@@ -157,6 +164,7 @@ static class FormulaTokenTypeExtensions
             FormulaTokenType.Minus => BinaryOperator.Minus,
             FormulaTokenType.Star => BinaryOperator.Multiply,
             FormulaTokenType.Slash => BinaryOperator.Divide,
+            FormulaTokenType.Ampersand => BinaryOperator.Concat,
             FormulaTokenType.Equals => BinaryOperator.Equals,
             FormulaTokenType.EqualsGreaterThan => BinaryOperator.GreaterThanOrEqual,
             FormulaTokenType.LessThanGreaterThan => BinaryOperator.NotEquals,
@@ -278,6 +286,16 @@ internal class FunctionSyntaxNode(FormulaToken token, FormulaToken openParenToke
     }
 }
 
+internal class NameSyntaxNode(FormulaToken token) : FormulaSyntaxNode(token)
+{
+    public string Name { get; } = token.Value;
+
+    public override void Accept(IFormulaSyntaxNodeVisitor visitor)
+    {
+        visitor.VisitName(this);
+    }
+}
+
 internal class CellSyntaxNode(FormulaToken token) : FormulaSyntaxNode(token)
 {
     public override void Accept(IFormulaSyntaxNodeVisitor visitor)
@@ -286,10 +304,18 @@ internal class CellSyntaxNode(FormulaToken token) : FormulaSyntaxNode(token)
     }
 }
 
-internal class RangeSyntaxNode(FormulaToken token, CellSyntaxNode start, CellSyntaxNode end) : FormulaSyntaxNode(token)
+internal enum RangeKind
+{
+    Cells,
+    Columns,
+    Rows,
+}
+
+internal class RangeSyntaxNode(FormulaToken token, CellSyntaxNode start, CellSyntaxNode end, RangeKind kind = RangeKind.Cells) : FormulaSyntaxNode(token)
 {
     public CellSyntaxNode Start { get; } = start;
     public CellSyntaxNode End { get; } = end;
+    public RangeKind Kind { get; } = kind;
 
     public override void Accept(IFormulaSyntaxNodeVisitor visitor)
     {
@@ -353,12 +379,26 @@ internal class FormulaParser
 
     private FormulaSyntaxNode ParseComparison()
     {
-        var left = ParseArithmetic();
+        var left = ParseConcatenation();
 
         while (Peek().Type is FormulaTokenType.Equals or FormulaTokenType.EqualsGreaterThan or
                FormulaTokenType.LessThanGreaterThan or
                FormulaTokenType.LessThan or FormulaTokenType.LessThanOrEqual or
                FormulaTokenType.GreaterThan or FormulaTokenType.GreaterThanOrEqual)
+        {
+            var token = tokens[position];
+            Advance(1);
+            left = new BinaryExpressionSyntaxNode(token, left, ParseConcatenation(), token.Type.ToBinaryOperator());
+        }
+
+        return left;
+    }
+
+    private FormulaSyntaxNode ParseConcatenation()
+    {
+        var left = ParseArithmetic();
+
+        while (Peek().Type is FormulaTokenType.Ampersand)
         {
             var token = tokens[position];
             Advance(1);
@@ -424,7 +464,7 @@ internal class FormulaParser
 
         if (token.Type == FormulaTokenType.Identifier)
         {
-            return ParseFunctionCall();
+            return ParseFunctionCallOrName();
         }
 
         if (token.Type == FormulaTokenType.BooleanLiteral)
@@ -472,6 +512,11 @@ internal class FormulaParser
             return start;
         }
 
+        if (token.Type is FormulaTokenType.ColumnIdentifier or FormulaTokenType.RowIdentifier)
+        {
+            return ParseColumnOrRowRange();
+        }
+
         if (token.Type == FormulaTokenType.StringLiteral)
         {
             Advance(1);
@@ -487,13 +532,52 @@ internal class FormulaParser
         return ParseNumberLiteral();
     }
 
-    private FormulaSyntaxNode ParseFunctionCall()
+    private RangeSyntaxNode ParseColumnOrRowRange()
+    {
+        var startToken = Peek();
+        Advance(1);
+        Expect(FormulaTokenType.Colon);
+        var endToken = Expect(startToken.Type);
+
+        var start = startToken.Address;
+        var end = endToken.Address;
+        var startWorksheet = start.Worksheet ?? end.Worksheet;
+        var endWorksheet = end.Worksheet ?? start.Worksheet;
+
+        if (startToken.Type == FormulaTokenType.ColumnIdentifier)
+        {
+            if (start.Column > end.Column)
+            {
+                (start, end, startWorksheet, endWorksheet) = (end, start, endWorksheet, startWorksheet);
+            }
+
+            return new RangeSyntaxNode(startToken,
+                new CellSyntaxNode(WithAddress(startToken, new CellRef(0, start.Column) { IsColumnAbsolute = start.IsColumnAbsolute, Worksheet = startWorksheet })),
+                new CellSyntaxNode(WithAddress(endToken, new CellRef(Worksheet.MaxRows - 1, end.Column) { IsColumnAbsolute = end.IsColumnAbsolute, Worksheet = endWorksheet })),
+                RangeKind.Columns);
+        }
+
+        if (start.Row > end.Row)
+        {
+            (start, end, startWorksheet, endWorksheet) = (end, start, endWorksheet, startWorksheet);
+        }
+
+        return new RangeSyntaxNode(startToken,
+            new CellSyntaxNode(WithAddress(startToken, new CellRef(start.Row, 0) { IsRowAbsolute = start.IsRowAbsolute, Worksheet = startWorksheet })),
+            new CellSyntaxNode(WithAddress(endToken, new CellRef(end.Row, Worksheet.MaxColumns - 1) { IsRowAbsolute = end.IsRowAbsolute, Worksheet = endWorksheet })),
+            RangeKind.Rows);
+    }
+
+    private static FormulaToken WithAddress(FormulaToken token, CellRef address) =>
+        new(token.Type, token.Value) { Address = address, Start = token.Start, End = token.End };
+
+    private FormulaSyntaxNode ParseFunctionCallOrName()
     {
         var token = Expect(FormulaTokenType.Identifier);
 
         // Support dotted function names (STDEV.S, MODE.SNGL, RANK.EQ): the lexer splits them into
         // Identifier '.' Identifier, so re-join into one name token spanning both so the registry resolves them.
-        if (Peek().Type == FormulaTokenType.Dot)
+        while (Peek().Type == FormulaTokenType.Dot && Peek(1).Type == FormulaTokenType.Identifier)
         {
             Advance(1);
             var suffix = Expect(FormulaTokenType.Identifier);
@@ -502,6 +586,11 @@ internal class FormulaParser
                 Start = token.Start,
                 End = suffix.End
             };
+        }
+
+        if (Peek().Type != FormulaTokenType.OpenParen)
+        {
+            return new NameSyntaxNode(token);
         }
 
         var openParenToken = Expect(FormulaTokenType.OpenParen);

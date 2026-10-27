@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.JSInterop;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -15,7 +16,8 @@ namespace Radzen
     /// Base class of components that display a list of items.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class DropDownBase<T> : DataBoundFormComponent<T>
+    public class DropDownBase<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)] T> : DataBoundFormComponent<T>
     {
         /// <summary>
         /// Gets or sets a value that determines how many additional items will be rendered before and after the visible region. This help to reduce the frequency of rendering during scrolling. However, higher values mean that more elements will be present in the page.
@@ -585,6 +587,37 @@ namespace Radzen
             return item;
         }
 
+        private static readonly ConcurrentDictionary<Type, bool> overridesToString = new();
+
+        /// <summary>
+        /// Gets the accessible name of an item. Returns <c>null</c> when no meaningful text can be
+        /// derived, so the caller can omit the aria-label and let assistive technology use the rendered content.
+        /// </summary>
+        /// <param name="item">The item.</param>
+        /// <returns>The accessible name or <c>null</c>.</returns>
+        [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2070, Justification = TrimMessages.ToStringOverridesPreserved)]
+        public string? GetItemAriaLabel(object? item)
+        {
+            if (item == null)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(TextProperty) && !overridesToString.GetOrAdd(item.GetType(), static type => type.GetMethod(nameof(ToString), Type.EmptyTypes)?.DeclaringType != typeof(object)))
+            {
+                return null;
+            }
+
+            return GetItemOrValueFromProperty(item, TextProperty ?? string.Empty)?.ToString();
+        }
+
+        internal string GetChipRemoveLabel(object item)
+        {
+            var label = GetItemAriaLabel(item);
+
+            return label != null ? $"{RemoveChipTitle} {label}" : RemoveChipTitle;
+        }
+
         /// <inheritdoc/>
         protected override async Task OnDataChanged()
         {
@@ -978,7 +1011,7 @@ namespace Radzen
                 var filteredItems = (!string.IsNullOrEmpty(TextProperty) ?
                     query.Where(TextProperty, args.Key, StringFilterOperator.StartsWith, FilterCaseSensitivity.CaseInsensitive) :
                     query)
-                    .Cast(elementType).Cast<dynamic>().ToList();
+                    .Cast(elementType).Cast<object>().ToList();
 
                 if (previousKey != args.Key)
                 {
@@ -1057,14 +1090,35 @@ namespace Radzen
         /// <summary>
         /// Debounces the filter.
         /// </summary>
-        async Task DebounceFilter()
+        Task DebounceFilter()
         {
-            if (JSRuntime != null)
+            return DebounceFilter(null);
+        }
+
+        async Task DebounceFilter(string? value)
+        {
+            if (value != null)
+            {
+                searchText = value;
+                await InvokeAsync(() => SearchTextChanged.InvokeAsync(SearchText));
+            }
+            else if (JSRuntime != null)
             {
                 searchText = await JSRuntime.InvokeAsync<string>("Radzen.getInputValue", search) ?? string.Empty;
                 await InvokeAsync(() => SearchTextChanged.InvokeAsync(SearchText));
             }
 
+            await ApplySearchText();
+        }
+
+        /// <inheritdoc />
+        protected override Task OnSearchTextChanged()
+        {
+            return ApplySearchText();
+        }
+
+        async Task ApplySearchText()
+        {
             if (!LoadData.HasDelegate)
             {
                 _view = null;
@@ -1140,7 +1194,7 @@ namespace Radzen
         {
             if (!FilterAsYouType)
             {
-                await DebounceFilter();
+                await DebounceFilter(args?.Value?.ToString());
             }
         }
 
@@ -1609,9 +1663,9 @@ namespace Radzen
                             else
                             {
                                 // Non-in-memory (e.g. EF): keep the per-value query so the lookup stays server-side.
-                                foreach (object v in values.Cast<dynamic>().ToList())
+                                foreach (object v in values.Cast<object>().ToList())
                                 {
-                                    dynamic item = view.AsQueryable().Where(new FilterDescriptor[]
+                                    object item = view.AsQueryable().Where(new FilterDescriptor[]
                                     {
                                         new FilterDescriptor()
                                         {

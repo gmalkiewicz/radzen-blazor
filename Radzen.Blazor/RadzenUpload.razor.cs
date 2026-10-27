@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Radzen.Blazor.Rendering;
@@ -58,8 +59,8 @@ namespace Radzen.Blazor
             _jsRefVersion++;
             var jsRef = _jsRef;
             _jsRef = null;
-            jsRef?.InvokeVoidAsync("dispose");
-            jsRef?.DisposeAsync();
+            jsRef?.InvokeVoid("dispose");
+            jsRef?.DisposeFireAndForget();
             GC.SuppressFinalize(this);
         }
 
@@ -302,6 +303,8 @@ namespace Radzen.Blazor
         }
 
         /// <inheritdoc />
+        [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(FileInfo))]
+        [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(PreviewFileInfo))]
         protected override async Task OnAfterRenderAsync(bool firstRender)
         {
             await base.OnAfterRenderAsync(firstRender);

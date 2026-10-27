@@ -16,7 +16,8 @@ namespace Radzen.Blazor
     /// </summary>
     /// <typeparam name="TItem">The type of data item.</typeparam>
     [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
-    public partial class RadzenSankeyDiagram<TItem> : RadzenComponent
+    public partial class RadzenSankeyDiagram<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)] TItem> : RadzenComponent
     {
         /// <summary>
         /// Gets or sets the tooltip service.
@@ -666,7 +667,7 @@ namespace Radzen.Blazor
         {
             if (IsJSRuntimeAvailable)
             {
-                JSRuntime!.InvokeVoidAsync("Radzen.disposeElement", Element);
+                JSRuntime!.InvokeVoid("Radzen.disposeElement", Element);
             }
 
             base.Dispose();

@@ -33,7 +33,8 @@ namespace Radzen.Blazor
     /// &lt;RadzenDropDown @bind-Value=@selectedIds TValue="IEnumerable&lt;int&gt;" Data=@items Multiple="true" Chips="true" /&gt;
     /// </code>
     /// </example>
-    public partial class RadzenDropDown<TValue> : DropDownBase<TValue>
+    public partial class RadzenDropDown<
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields)] TValue> : DropDownBase<TValue>
     {
         IJSObjectReference? _jsRef;
         int _jsRefVersion;
@@ -344,7 +345,7 @@ namespace Radzen.Blazor
             {
                 if (!Multiple)
                 {
-                    return selectedItem != null ? $"{GetItemOrValueFromProperty(selectedItem, TextProperty ?? string.Empty)}" : EmptyAriaLabel;
+                    return selectedItem != null ? GetItemAriaLabel(selectedItem) : EmptyAriaLabel;
                 }
 
                 if (selectedItems.Count == 0)
@@ -354,7 +355,12 @@ namespace Radzen.Blazor
 
                 if (selectedItems.Count < MaxSelectedLabels)
                 {
-                    return string.Join(Separator, selectedItems.Select(i => $"{GetItemOrValueFromProperty(i, TextProperty ?? string.Empty)}"));
+                    var labels = selectedItems.Select(GetItemAriaLabel).ToList();
+
+                    if (labels.All(label => label != null))
+                    {
+                        return string.Join(Separator, labels);
+                    }
                 }
 
                 return $"{selectedItems.Count} {SelectedItemsText}";
@@ -494,7 +500,7 @@ namespace Radzen.Blazor
                 var key = args.Code ?? args.Key;
                 if (key == "Tab" && isFilter && wasOpen && JSRuntime != null)
                 {
-                    await JSRuntime.InvokeVoidAsync("Radzen.focusNext", Element, args.ShiftKey);
+                    await JSRuntime.InvokeVoidAsync("Radzen.focusNext", Element, args.ShiftKey, PopupID);
                 }
             }
         }
@@ -577,8 +583,8 @@ namespace Radzen.Blazor
             _jsRefVersion++;
             var jsRef = _jsRef;
             _jsRef = null;
-            jsRef?.InvokeVoidAsync("dispose");
-            jsRef?.DisposeAsync();
+            jsRef?.InvokeVoid("dispose");
+            jsRef?.DisposeFireAndForget();
 
             GC.SuppressFinalize(this);
         }

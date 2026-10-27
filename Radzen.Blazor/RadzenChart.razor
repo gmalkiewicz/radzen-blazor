@@ -47,7 +47,7 @@
             </g>
         </svg>
         <TooltipOverlay Chart="@this" />
-        @if ((AllowZoom || AllowPan) && (ZoomStart > 0 || ZoomEnd < 1))
+        @if ((AllowZoom || AllowPan) && ShowScrollbar && (ZoomStart > 0 || ZoomEnd < 1))
         {
             <div class="rz-chart-scrollbar" style="bottom: @(scrollbarBottom.ToInvariantString())px; left: @(MarginLeft.ToInvariantString())px; right: @(MarginRight.ToInvariantString())px;">
                 <div class="rz-chart-scrollbar-track">
@@ -81,6 +81,9 @@
         ShowHandleLabels="@RangeNavigator.ShowHandleLabels"
         HandleLabelFormatString="@RangeNavigator.HandleLabelFormatString"
         HandleLabelFormatter="@RangeNavigator.HandleLabelFormatter"
+        ShowTooltip="@RangeNavigator.ShowTooltip"
+        TooltipFormatString="@RangeNavigator.TooltipFormatString"
+        Culture="@Culture"
         Style="@($"height: {RangeNavigator.Height.ToInvariantString()}px; margin-top: 0.5rem; margin-inline-start: {MarginLeft.ToInvariantString()}px; margin-inline-end: {MarginRight.ToInvariantString()}px;")">
         @RangeNavigator.ChildContent
     </RadzenRangeNavigator>

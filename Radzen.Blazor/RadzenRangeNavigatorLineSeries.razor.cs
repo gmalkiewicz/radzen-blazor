@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Radzen.Blazor.Rendering;
 
@@ -13,7 +14,8 @@ namespace Radzen.Blazor
     /// <typeparam name="TItem">The type of the data items.</typeparam>
     [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2026, Justification = TrimMessages.DataTypePreserved)]
     [UnconditionalSuppressMessage(TrimMessages.Trimming, TrimMessages.IL2087, Justification = TrimMessages.DataTypePreserved)]
-    public partial class RadzenRangeNavigatorLineSeries<TItem> : ComponentBase, IRangeNavigatorSeries, IDisposable
+    public partial class RadzenRangeNavigatorLineSeries<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)] TItem> : ComponentBase, IRangeNavigatorSeries, IDisposable
     {
         /// <summary>
         /// Gets or sets the parent navigator.
@@ -81,13 +83,49 @@ namespace Radzen.Blazor
         private IList<TItem> Items { get; set; } = new List<TItem>();
 
         /// <inheritdoc />
-        protected override void OnParametersSet()
+        public override async Task SetParametersAsync(ParameterView parameters)
         {
-            if (Data != null)
+            var dataChanged = parameters.DidParameterChange(nameof(Data), Data);
+            var previousItems = Items;
+
+            await base.SetParametersAsync(parameters);
+
+            if (dataChanged && !SameDataPoints(previousItems, Items))
             {
-                Items = Data.ToList();
+                Navigator?.Refresh();
+            }
+        }
+
+        private bool SameDataPoints(IList<TItem> previous, IList<TItem> current)
+        {
+            if (previous.Count != current.Count)
+            {
+                return false;
             }
 
+            if (string.IsNullOrEmpty(ValueProperty))
+            {
+                return previous.SequenceEqual(current);
+            }
+
+            var category = string.IsNullOrEmpty(CategoryProperty) ? null : PropertyAccess.Getter<TItem, object>(CategoryProperty);
+            var value = Value;
+
+            for (var i = 0; i < current.Count; i++)
+            {
+                if (!Equals(category?.Invoke(previous[i]), category?.Invoke(current[i])) || value(previous[i]) != value(current[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
+        protected override void OnParametersSet()
+        {
+            Items = Data?.ToList() ?? new List<TItem>();
             Navigator?.AddSeries(this);
         }
 
@@ -113,7 +151,8 @@ namespace Radzen.Blazor
                 return new DateScale
                 {
                     Input = scale.Input,
-                    Output = scale.Output
+                    Output = scale.Output,
+                    WholeDays = IsDateOnly(CategoryProperty) && (scale is not DateScale existing || existing.WholeDays)
                 };
             }
 
@@ -244,6 +283,22 @@ namespace Radzen.Blazor
             };
         }
 
+        string? IRangeNavigatorSeries.Color => Stroke;
+
+        /// <inheritdoc />
+        public IEnumerable<Point> GetDataPoints(ScaleBase categoryScale)
+        {
+            if (Items == null || !Items.Any())
+            {
+                return Enumerable.Empty<Point>();
+            }
+
+            var category = Category(categoryScale);
+            var value = Value;
+
+            return Items.Select(item => new Point { X = category(item), Y = value(item) }).ToList();
+        }
+
         private Func<TItem, double> Category(ScaleBase scale)
         {
             if (IsNumeric(CategoryProperty))
@@ -253,7 +308,7 @@ namespace Radzen.Blazor
 
             if (IsDate(CategoryProperty))
             {
-                var getter = PropertyAccess.Getter<TItem, DateTime>(CategoryProperty!);
+                var getter = PropertyAccess.DateGetter<TItem>(CategoryProperty!);
                 return (item) => getter(item).Ticks;
             }
 
@@ -292,12 +347,12 @@ namespace Radzen.Blazor
                 return false;
             }
 
-            if (PropertyAccess.IsDateOnly(property))
-            {
-                return false;
-            }
-
             return PropertyAccess.IsDate(property);
+        }
+
+        private bool IsDateOnly(string? propertyName)
+        {
+            return !string.IsNullOrEmpty(propertyName) && PropertyAccess.IsDateOnly(PropertyAccess.GetPropertyType(typeof(TItem), propertyName));
         }
 
         private bool IsNumeric(string? propertyName)

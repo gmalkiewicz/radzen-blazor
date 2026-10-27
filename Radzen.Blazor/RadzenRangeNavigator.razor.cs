@@ -3,6 +3,7 @@ using Microsoft.JSInterop;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Radzen.Blazor
@@ -63,6 +64,19 @@ namespace Radzen.Blazor
         public Func<object, string>? HandleLabelFormatter { get; set; }
 
         /// <summary>
+        /// Gets or sets whether hovering the navigator shows the nearest point's category and value.
+        /// Date and numeric categories are formatted the same way as the handle labels.
+        /// </summary>
+        [Parameter]
+        public bool ShowTooltip { get; set; }
+
+        /// <summary>
+        /// Gets or sets the format string for the value shown in the tooltip, e.g. <c>"{0:N0}"</c>. Defaults to <c>"{0:N}"</c> when not set.
+        /// </summary>
+        [Parameter]
+        public string? TooltipFormatString { get; set; }
+
+        /// <summary>
         /// Gets or sets whether an axis with tick labels is displayed below the navigator.
         /// </summary>
         [Parameter]
@@ -78,14 +92,14 @@ namespace Radzen.Blazor
 
         /// <summary>
         /// Gets or sets the minimum value for the axis. Use when there are no child series to define the range.
-        /// Supports <see cref="DateTime"/> and numeric types.
+        /// Supports <see cref="DateTime"/>, <see cref="DateOnly"/> and numeric types.
         /// </summary>
         [Parameter]
         public object? Min { get; set; }
 
         /// <summary>
         /// Gets or sets the maximum value for the axis. Use when there are no child series to define the range.
-        /// Supports <see cref="DateTime"/> and numeric types.
+        /// Supports <see cref="DateTime"/>, <see cref="DateOnly"/> and numeric types.
         /// </summary>
         [Parameter]
         public object? Max { get; set; }
@@ -105,6 +119,17 @@ namespace Radzen.Blazor
 
         private bool firstRender = true;
         private bool isDragging;
+        private bool tooltipChanged;
+
+        /// <inheritdoc />
+        public override async Task SetParametersAsync(ParameterView parameters)
+        {
+            tooltipChanged |= parameters.DidParameterChange(nameof(ShowTooltip), ShowTooltip)
+                || parameters.DidParameterChange(nameof(TooltipFormatString), TooltipFormatString)
+                || parameters.DidParameterChange(nameof(Culture), Culture);
+
+            await base.SetParametersAsync(parameters);
+        }
 
         /// <inheritdoc />
         protected override bool ShouldRender()
@@ -130,6 +155,17 @@ namespace Radzen.Blazor
             NavigatorSeries.Remove(series);
         }
 
+        internal void Refresh()
+        {
+            if (Width <= 0)
+            {
+                return;
+            }
+
+            UpdateScales();
+            StateHasChanged();
+        }
+
         internal void UpdateScales()
         {
             if (Width <= 0)
@@ -148,9 +184,9 @@ namespace Radzen.Blazor
 
             if (NavigatorSeries.Count == 0 && Min != null && Max != null)
             {
-                if (Min is DateTime)
+                if (Min is DateTime or DateOnly or DateTimeOffset)
                 {
-                    CategoryScale = new DateScale();
+                    CategoryScale = new DateScale { WholeDays = Min is DateOnly };
                 }
 
                 CategoryScale.Resize(Min, Max);
@@ -163,6 +199,7 @@ namespace Radzen.Blazor
             ValueScale.Fit(10);
 
             UpdateJSLabelConfig();
+            UpdateJSTooltipConfig();
         }
 
         internal IList<AxisTick> GetAxisTicks()
@@ -282,13 +319,78 @@ namespace Radzen.Blazor
             var format = HandleLabelFormatString ?? "{0:MM/dd/yyyy}";
             try
             {
-                JSRuntime.InvokeVoidAsync("Radzen.updateRangeNavigatorLabels", Element, isDate, inputStart, inputEnd, format);
+                JSRuntime.InvokeVoid("Radzen.updateRangeNavigatorLabels", Element, isDate, inputStart, inputEnd, format);
             }
             catch
             {
                 // Ignore errors
             }
         }
+
+        private void UpdateJSTooltipConfig()
+        {
+            if (!ShowTooltip && !tooltipChanged)
+            {
+                return;
+            }
+
+            tooltipChanged = false;
+
+            if (JSRuntime == null || firstRender)
+            {
+                return;
+            }
+
+            try
+            {
+                JSRuntime.InvokeVoid("Radzen.updateRangeNavigatorTooltip", Element, ShowTooltip ? GetTooltipPoints() : new List<TooltipPoint>());
+            }
+            catch
+            {
+                // Ignore errors
+            }
+        }
+
+        internal IList<TooltipPoint> GetTooltipPoints()
+        {
+            var points = new List<TooltipPoint>();
+
+            if (Width <= 0 || Height <= 0)
+            {
+                return points;
+            }
+
+            foreach (var series in NavigatorSeries)
+            {
+                foreach (var point in series.GetDataPoints(CategoryScale))
+                {
+                    var x = CategoryScale.Scale(point.X) / Width;
+                    var y = ValueScale.Scale(point.Y) / Height;
+
+                    if (double.IsNaN(x) || double.IsNaN(y))
+                    {
+                        continue;
+                    }
+
+                    points.Add(new TooltipPoint(Math.Clamp(x, 0, 1), Math.Clamp(y, 0, 1), series.Color,
+                        GetTooltipCategory(point.X), string.Format(Culture, TooltipFormatString ?? "{0:N}", point.Y)));
+                }
+            }
+
+            return points.OrderBy(point => point.X).ToList();
+        }
+
+        private string GetTooltipCategory(double value)
+        {
+            if (CategoryScale is OrdinalScale)
+            {
+                return CategoryScale.Value(value)?.ToString() ?? "";
+            }
+
+            return FormatCategory(value);
+        }
+
+        internal sealed record TooltipPoint(double X, double Y, string? Color, string Category, string Value);
 
         internal string GetHandleLabel(double fraction)
         {
@@ -305,11 +407,14 @@ namespace Radzen.Blazor
                 return "";
             }
 
-            var value = inputStart + fraction * (inputEnd - inputStart);
+            return FormatCategory(inputStart + fraction * (inputEnd - inputStart));
+        }
 
+        private string FormatCategory(double value)
+        {
             if (CategoryScale is DateScale)
             {
-                var date = new DateTime((long)value);
+                var date = CategoryScale.Value(value);
 
                 if (HandleLabelFormatter != null)
                 {
@@ -354,6 +459,11 @@ namespace Radzen.Blazor
         {
             await base.OnAfterRenderAsync(firstRender);
 
+            if (!firstRender && tooltipChanged)
+            {
+                UpdateJSTooltipConfig();
+            }
+
             if (firstRender)
             {
                 this.firstRender = false;
@@ -382,7 +492,7 @@ namespace Radzen.Blazor
             {
                 try
                 {
-                    JSRuntime!.InvokeVoidAsync("Radzen.disposeElement", Element);
+                    JSRuntime!.InvokeVoid("Radzen.disposeElement", Element);
                 }
                 catch
                 {

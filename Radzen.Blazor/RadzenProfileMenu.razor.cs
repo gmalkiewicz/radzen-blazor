@@ -161,7 +161,7 @@ namespace Radzen.Blazor
 
                 try
                 {
-                    JSRuntime?.InvokeVoidAsync("Radzen.unregisterProfileMenuClickAway", Element);
+                    JSRuntime?.InvokeVoid("Radzen.unregisterProfileMenuClickAway", Element);
                 }
                 catch (JSDisconnectedException)
                 {
@@ -250,6 +250,10 @@ namespace Radzen.Blazor
                     if (item.Path != null)
                     {
                         NavigationManager?.NavigateTo(item.Path);
+                    }
+                    else if (item.Action != null)
+                    {
+                        await item.Submit();
                     }
                     else
                     {
