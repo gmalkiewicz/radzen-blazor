@@ -425,6 +425,8 @@ namespace Radzen.Blazor
                 visibleChanged = false;
                 disabledChanged = false;
 
+                var labelToLink = LabelToLink();
+
                 if (Visible)
                 {
                     bool reload = false;
@@ -454,7 +456,7 @@ namespace Radzen.Blazor
                         if (version == _jsRefVersion)
                         {
                             var created = await JSRuntime.InvokeAsync<IJSObjectReference>(
-                                "Radzen.createDropDown", Element);
+                                "Radzen.createDropDown", Element, labelToLink);
 
                             if (version == _jsRefVersion)
                             {
@@ -473,6 +475,10 @@ namespace Radzen.Blazor
                         StateHasChanged();
                     }
                 }
+            }
+            else
+            {
+                await LinkLabelAsync(Element);
             }
 
             if (shouldReposition)
@@ -512,7 +518,7 @@ namespace Radzen.Blazor
         /// <param name="isFromKey">if set to <c>true</c> [is from key].</param>
         protected override async Task OnSelectItem(object? item, bool isFromKey = false)
         {
-            if (!ReadOnly && JSRuntime != null)
+            if (!Disabled && !ReadOnly && JSRuntime != null)
             {
                 if (!Multiple && !isFromKey)
                 {

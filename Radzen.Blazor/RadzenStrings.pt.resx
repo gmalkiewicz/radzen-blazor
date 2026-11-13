@@ -1078,6 +1078,12 @@
   <data name="DataGrid_CollapseAllTitle" xml:space="preserve">
     <value>Recolher tudo</value>
   </data>
+  <data name="DataGrid_ExpandAllGroupsTitle" xml:space="preserve">
+    <value>Expandir todos os grupos</value>
+  </data>
+  <data name="DataGrid_CollapseAllGroupsTitle" xml:space="preserve">
+    <value>Recolher todos os grupos</value>
+  </data>
   <!-- DatePicker -->
   <data name="DatePicker_CalendarWeekTitle" xml:space="preserve">
     <value>#</value>
@@ -1782,6 +1788,9 @@
   </data>
   <data name="Tabs_ScrollForwardAriaLabel" xml:space="preserve">
     <value>Rolar abas para frente</value>
+  </data>
+  <data name="Tabs_CloseTitle" xml:space="preserve">
+    <value>Fechar aba</value>
   </data>
   <!-- TimeSpanPicker -->
   <data name="TimeSpanPicker_TogglePopupAriaLabel" xml:space="preserve">

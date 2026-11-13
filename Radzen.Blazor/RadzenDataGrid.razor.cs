@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Components;
+﻿using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
@@ -103,6 +103,10 @@ namespace Radzen.Blazor
         /// Use this property to check validation state before saving edited rows.
         /// </summary>
         /// <value><c>true</c> if all edit form validators are valid; otherwise, <c>false</c>. Returns <c>true</c> if no rows are being edited.</value>
+        /// <remarks>
+        /// Runs synchronous validators only. On .NET 11 and later it throws <see cref="InvalidOperationException"/> when a validator of an edited row
+        /// registers asynchronous work. Use <see cref="IsValidAsync"/> in that case.
+        /// </remarks>
         public bool IsValid
         {
             get
@@ -112,12 +116,41 @@ namespace Radzen.Blazor
                     return true;
                 }
 
+#pragma warning disable CS0618
                 return editContexts.All(c => 
                 { 
                     c.Value.Validate();
                     return !c.Value.GetValidationMessages().Any(); 
                 });
+#pragma warning restore CS0618
             }
+        }
+
+        /// <summary>
+        /// Validates all rows that are being edited and awaits their asynchronous validators.
+        /// Use this method instead of <see cref="IsValid"/> when the edited rows use asynchronous validation.
+        /// </summary>
+        /// <returns><c>true</c> if all edit form validators are valid; otherwise, <c>false</c>. Returns <c>true</c> if no rows are being edited.</returns>
+        public async Task<bool> IsValidAsync()
+        {
+            foreach (var editContext in editContexts.Values.ToList())
+            {
+#if NET11_0_OR_GREATER
+                if (!await editContext.ValidateAsync())
+                {
+                    return false;
+                }
+#else
+                editContext.Validate();
+#endif
+
+                if (editContext.GetValidationMessages().Any())
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -258,10 +291,10 @@ namespace Radzen.Blazor
             var totalItemsCount = 0;
             _groupedPagedView = Enumerable.Empty<GroupResult>();
 
-            if (Groups.Any())
+            if (Groups.Count > 0)
             {
-                query = view.AsQueryable().OrderBy(Groups.Any() ? string.Join(',', Groups.Select(g => g.Property)) : null);
-                _groupedPagedView = await Task.FromResult(query.GroupByMany(Groups.Any() ? Groups.Select(g => g.Property).ToArray() : DefaultGroupProperty).ToList());
+                query = view.AsQueryable().OrderBy(Groups.Count > 0 ? string.Join(',', Groups.Select(g => g.Property)) : null);
+                _groupedPagedView = await Task.FromResult(query.GroupByMany(Groups.Count > 0 ? Groups.Select(g => g.Property).ToArray() : DefaultGroupProperty).ToList());
 
                 totalItemsCount = await Task.FromResult(_groupedPagedView.Count());
             }
@@ -277,7 +310,7 @@ namespace Radzen.Blazor
             {
                 if (AllowVirtualization)
                 {
-                    if(AllowGrouping && Groups.Any() && !LoadData.HasDelegate)
+                    if(AllowGrouping && Groups.Count > 0 && !LoadData.HasDelegate)
                     {
                         builder.OpenComponent(0, typeof(Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize<GroupResult>));
                         builder.AddAttribute(1, "ItemsProvider", new Microsoft.AspNetCore.Components.Web.Virtualization.ItemsProviderDelegate<GroupResult>(LoadGroups));
@@ -345,7 +378,7 @@ namespace Radzen.Blazor
 
         internal void DrawGroupOrDataRows(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder, IList<RadzenDataGridColumn<TItem>> visibleColumns)
         {
-            if (Groups.Any())
+            if (Groups.Count > 0)
             {
                 foreach (var group in GroupedPagedView)
                 {
@@ -500,11 +533,22 @@ namespace Radzen.Blazor
         public bool Responsive { get; set; }
 
         /// <summary>
-        /// Allows to define a custom function for enums DisplayAttribute Description property value translation in datagrid
-        /// Enum filters.
+        /// Gets or sets a function that translates the display text of enum values shown in the cells, the exported values, the enum filter options
+        /// and the check-box list filter. It receives the <see cref="System.ComponentModel.DataAnnotations.DisplayAttribute"/> description or name,
+        /// the <see cref="System.ComponentModel.DescriptionAttribute"/> description or the member name of the enum value.
+        /// Use <see cref="EnumTranslationFunc"/> when the translation needs the enum value or its type.
         /// </summary>
         [Parameter]
         public Func<string, string>? EnumFilterTranslationFunc { get; set; }
+
+        /// <summary>
+        /// Gets or sets a function that translates enum values shown in the cells, the exported values, the enum filter options
+        /// and the check-box list filter. It receives the enum value itself, so it can tell apart members of different enums that share a name
+        /// and can call a typed localization service. It takes precedence over <see cref="EnumFilterTranslationFunc"/>;
+        /// return <c>null</c> to fall back to the display text and <see cref="EnumFilterTranslationFunc"/> for that value.
+        /// </summary>
+        [Parameter]
+        public Func<Enum, string?>? EnumTranslationFunc { get; set; }
 
         /// <summary>
         /// The grouped and paged View
@@ -2652,10 +2696,10 @@ namespace Radzen.Blazor
         {
             _groupedPagedView = null;
             _view = null;
-            _value = new List<TItem>();
 
             if (resetRowState)
             {
+                _value = new List<TItem>();
                 selectedItems.Clear();
                 expandedItems.Clear();
                 collapsedGroupItems.Clear();
@@ -3088,9 +3132,17 @@ namespace Radzen.Blazor
             }
 
             IReadOnlyDictionary<string, object> attributes;
+            Dictionary<string, object>? dict = null;
+
+            if (args.HasAttributes && args.Attributes.TryGetValue("class", out var rowClass))
+            {
+                dict = new Dictionary<string, object>(args.Attributes);
+                dict["class"] = string.Concat(RowStyle(item, index), " ", rowClass);
+            }
+
             if (RowClickActive)
             {
-                var dict = args.HasAttributes ? new Dictionary<string, object>(args.Attributes) : new Dictionary<string, object>();
+                dict ??= args.HasAttributes ? new Dictionary<string, object>(args.Attributes) : new Dictionary<string, object>();
                 // A chainable consumer onclick runs after the built-in row click; anything else (e.g. a string
                 // HTML handler) is kept as-is rather than wrapped and dropped.
                 dict["onclick"] = dict.TryGetValue("onclick", out var existing) && existing != null
@@ -3100,9 +3152,9 @@ namespace Radzen.Blazor
             }
             else
             {
-                attributes = args.HasAttributes
+                attributes = dict ?? (args.HasAttributes
                     ? new System.Collections.ObjectModel.ReadOnlyDictionary<string, object>(args.Attributes)
-                    : EmptyAttributes;
+                    : EmptyAttributes);
             }
 
             return new Tuple<Radzen.RowRenderEventArgs<TItem>, IReadOnlyDictionary<string, object>>(args, attributes);
@@ -3199,9 +3251,9 @@ namespace Radzen.Blazor
                 }
             }
 
-            if (allowColumnPickingChanged || emptyTextChanged || allGroupsExpandedChanged && Groups.Any())
+            if (allowColumnPickingChanged || emptyTextChanged || allGroupsExpandedChanged && Groups.Count > 0)
             {
-                if (allGroupsExpandedChanged && Groups.Any() && allGroupsExpanded == true)
+                if (allGroupsExpandedChanged && Groups.Count > 0 && allGroupsExpanded == true)
                 {
                     collapsedGroupItems.Clear();
                 }
@@ -3536,6 +3588,56 @@ namespace Radzen.Blazor
         [Parameter]
         public bool ShowGroupExpandColumn { get; set; } = true;
 
+        /// <summary>
+        /// Gets or sets a value indicating whether all groups can be expanded or collapsed at once from the header of the group expand column.
+        /// The button is rendered only when the DataGrid is grouped and <see cref="ShowGroupExpandColumn"/> is <c>true</c>.
+        /// </summary>
+        /// <value><c>true</c> to render the expand all groups button in the header; otherwise, <c>false</c>.</value>
+        [Parameter]
+        public bool ShowGroupExpandAll { get; set; }
+
+        private string? expandAllGroupsTitle;
+
+        /// <summary>
+        /// Gets or sets the title attribute of the expand all groups button.
+        /// </summary>
+        /// <value>The title attribute value of the expand all groups button.</value>
+        [Parameter]
+        public string ExpandAllGroupsTitle { get => expandAllGroupsTitle ?? Localize(nameof(RadzenStrings.DataGrid_ExpandAllGroupsTitle)); set => expandAllGroupsTitle = value; }
+
+        private string? collapseAllGroupsTitle;
+
+        /// <summary>
+        /// Gets or sets the title attribute of the collapse all groups button.
+        /// </summary>
+        /// <value>The title attribute value of the collapse all groups button.</value>
+        [Parameter]
+        public string CollapseAllGroupsTitle { get => collapseAllGroupsTitle ?? Localize(nameof(RadzenStrings.DataGrid_CollapseAllGroupsTitle)); set => collapseAllGroupsTitle = value; }
+
+        internal bool AreAllGroupsExpanded => allGroupsExpanded == true || allGroupsExpanded == null && collapsedGroupItems.Count == 0;
+
+        /// <summary>
+        /// Expands all groups when any group is collapsed; collapses all groups when every group is expanded.
+        /// Updates <see cref="AllGroupsExpanded"/> and raises <see cref="AllGroupsExpandedChanged"/>.
+        /// </summary>
+        public async Task ToggleAllGroupsExpand()
+        {
+            allGroupsExpanded = !AreAllGroupsExpanded;
+
+            if (allGroupsExpanded == true)
+            {
+                collapsedGroupItems.Clear();
+            }
+
+            await AllGroupsExpandedChanged.InvokeAsync(allGroupsExpanded);
+            await ChangeState();
+        }
+
+        private string GroupTitleAttribute()
+        {
+            return AreAllGroupsExpanded ? CollapseAllGroupsTitle : ExpandAllGroupsTitle;
+        }
+
         private string? expandAllTitle;
 
         /// <summary>
@@ -3838,7 +3940,12 @@ namespace Radzen.Blazor
             {
                 var editContext = editContexts.FirstOrDefault(i => ItemEquals(i.Key, item)).Value;
 
-                if (editContext?.Validate() == true)
+#if NET11_0_OR_GREATER
+                var valid = editContext != null && await editContext.ValidateAsync();
+#else
+                var valid = editContext?.Validate() == true;
+#endif
+                if (valid)
                 {
                     editedItems = editedItems.Where(i => !ItemEquals(i.Key, item)).ToDictionary(i => i.Key, i => i.Value);
                     editContexts = editContexts.Where(i => !ItemEquals(i.Key, item)).ToDictionary(i => i.Key, i => i.Value);

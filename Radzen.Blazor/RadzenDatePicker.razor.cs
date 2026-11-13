@@ -797,7 +797,7 @@ namespace Radzen.Blazor
 
         async Task ToggleAmPm()
         {
-            if (Disabled)
+            if (Disabled || ReadOnly)
             {
                 return;
             }
@@ -881,6 +881,11 @@ namespace Radzen.Blazor
 
         async Task UpdateValueFromTime(DateTime newValue)
         {
+            if (ReadOnly)
+            {
+                return;
+            }
+
             newValue = ClampToMinMax(newValue);
 
             if (ShowTimeOkButton && !Immediate)
@@ -945,7 +950,6 @@ namespace Radzen.Blazor
             RevertUncommittedTimeChange();
             ResetView();
             contentStyle = "display:none;";
-            StateHasChanged();
         }
 
         async Task UpdateHour(int v)
@@ -985,6 +989,12 @@ namespace Radzen.Blazor
 
         async Task OnOkClick(bool shouldClose = true, bool fromOkButton = false)
         {
+            if (ReadOnly)
+            {
+                await ClosePopup();
+                return;
+            }
+
             // Prevent single-value change path in Multiple mode
             if (Multiple)
             {
@@ -1342,7 +1352,7 @@ namespace Radzen.Blazor
                 return;
             }
 
-            if ((key == "Enter" || key == "Space") && !Disabled && !dateArgs.Disabled)
+            if ((key == "Enter" || key == "Space") && !Disabled && !ReadOnly && !dateArgs.Disabled)
             {
                 preventKeyPress = true;
                 stopKeydownPropagation = true;
@@ -2081,7 +2091,6 @@ namespace Radzen.Blazor
                 }
 
                 await Change.InvokeAsync(DateTimeValue);
-                StateHasChanged();
             }
         }
 
@@ -2341,6 +2350,11 @@ namespace Radzen.Blazor
 
         /// <summary> Gets the current placeholder. Returns empty string if this component is inside a RadzenFormField.</summary>
         protected string CurrentPlaceholder => FormFieldContext?.AllowFloatingLabel == true ? " " : Placeholder;
+
+        /// <summary>
+        /// Gets the id of the input element: <see cref="Name"/> when set, otherwise an id derived from the component id.
+        /// </summary>
+        protected string InputId => Name ?? $"{GetId()}-input";
 
         /// <summary>
         /// Closes this instance popup.
@@ -2691,6 +2705,8 @@ namespace Radzen.Blazor
                 FormFieldContext?.DisabledChanged(Disabled);
             }
 
+            FormFieldContext?.SetLabelTarget(this, Visible ? InputId : null);
+
             if (shouldClose && !firstRender && IsJSRuntimeAvailable && JSRuntime != null)
             {
                 await JSRuntime.InvokeVoidAsync("Radzen.destroyPopup", PopupID);
@@ -2763,6 +2779,8 @@ namespace Radzen.Blazor
         public override void Dispose()
         {
             base.Dispose();
+
+            FormFieldContext?.SetLabelTarget(this, null);
 
             if (EditContext != null)
             {
@@ -2847,7 +2865,7 @@ namespace Radzen.Blazor
         {
             var list = ClassList.Create()
                                .Add("rz-state-default", !forCell)
-                               .Add("rz-calendar-other-month", GetCalendarMonth(viewMonth) != GetCalendarMonth(date))
+                               .Add("rz-calendar-other-month", forCell && GetCalendarMonth(viewMonth) != GetCalendarMonth(date))
                                .Add("rz-state-active", !forCell && (IsRange ? IsRangeEndpoint(date) : Multiple ? IsSelectedDate(date) : (DateTimeValue.HasValue && DateTimeValue.Value.Date.CompareTo(date.Date) == 0)))
                                .Add("rz-calendar-range", !forCell && IsDateInRange(date))
                                .Add("rz-calendar-today", !forCell && DateTime.Now.Date.CompareTo(date.Date) == 0)

@@ -1078,6 +1078,12 @@
   <data name="DataGrid_CollapseAllTitle" xml:space="preserve">
     <value>すべて折りたたむ</value>
   </data>
+  <data name="DataGrid_ExpandAllGroupsTitle" xml:space="preserve">
+    <value>すべてのグループを展開</value>
+  </data>
+  <data name="DataGrid_CollapseAllGroupsTitle" xml:space="preserve">
+    <value>すべてのグループを折りたたむ</value>
+  </data>
   <!-- DatePicker -->
   <data name="DatePicker_CalendarWeekTitle" xml:space="preserve">
     <value>#</value>
@@ -1772,6 +1778,9 @@
   </data>
   <data name="Tabs_ScrollForwardAriaLabel" xml:space="preserve">
     <value>タブを末尾方向にスクロール</value>
+  </data>
+  <data name="Tabs_CloseTitle" xml:space="preserve">
+    <value>タブを閉じる</value>
   </data>
   <!-- TimeSpanPicker -->
   <data name="TimeSpanPicker_TogglePopupAriaLabel" xml:space="preserve">

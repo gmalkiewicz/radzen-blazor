@@ -664,6 +664,8 @@ namespace Radzen.Blazor
             }
 
             await base.OnAfterRenderAsync(firstRender);
+
+            await LinkLabelAsync(Element);
         }
 
         async Task FocusItem()
@@ -1010,8 +1012,6 @@ namespace Radzen.Blazor
             {
                 await OnLoadData(new Radzen.LoadDataArgs() { Skip = 0, Top = PageSize, OrderBy = "" });
             }
-
-            StateHasChanged();
         }
 
         string? previousSearch;
@@ -1183,7 +1183,7 @@ namespace Radzen.Blazor
                     await JSRuntime.InvokeVoidAsync("Radzen.focusNext", Element, args.ShiftKey, PopupID);
                 }
             }
-            else if (key == "Delete" && AllowClear)
+            else if ((key == "Delete" || key == "Backspace" && !isFilter) && AllowClear)
             {
                 preventKeydown = true;
 
@@ -1395,6 +1395,11 @@ namespace Radzen.Blazor
 
         async Task OnRowSelect(object item)
         {
+            if (Disabled)
+            {
+                return;
+            }
+
             await CloseAndFocus();
 
             if (AllowRowSelectOnRowClick)

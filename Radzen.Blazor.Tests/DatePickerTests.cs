@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace Radzen.Blazor.Tests
@@ -1394,6 +1395,113 @@ namespace Radzen.Blazor.Tests
             Assert.Equal(31, lastValueChanged.Value.Minute);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task DatePicker_DaySelection_DoesNotChangeValue_WhenReadOnlyAfterOpening(bool useKeyboard)
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var initialDate = new DateTime(2024, 6, 15);
+            var value = initialDate;
+            var changeCount = 0;
+            var component = ctx.RenderComponent<RadzenDatePicker<DateTime>>(parameters => parameters
+                .Add(p => p.Value, initialDate)
+                .Add(p => p.ValueChanged, next => { value = next; })
+                .Add(p => p.Change, _ => { changeCount++; }));
+
+            await component.InvokeAsync(() => component.Find(".rz-datepicker-trigger").MouseDown());
+            component.SetParametersAndRender(parameters => parameters.Add(p => p.ReadOnly, true));
+
+            var day = component.FindAll("td:not(.rz-calendar-other-month) span")
+                .First(element => element.TextContent == "20").ParentElement;
+
+            if (useKeyboard)
+            {
+                await component.InvokeAsync(() => day.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Code = "Enter" }));
+            }
+            else
+            {
+                await component.InvokeAsync(() => day.Click());
+            }
+
+            Assert.Equal(initialDate, value);
+            Assert.Equal(0, changeCount);
+        }
+
+        [Theory]
+        [InlineData(".rz-hour-picker .rz-numeric-up")]
+        [InlineData(".rz-minute-picker .rz-numeric-up")]
+        [InlineData(".rz-ampm-picker button")]
+        public async Task DatePicker_TimeChange_DoesNotChangeValue_WhenReadOnlyAfterOpening(string selector)
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var initialDate = new DateTime(2024, 6, 15, 9, 30, 0);
+            var value = initialDate;
+            var changeCount = 0;
+            var component = ctx.RenderComponent<RadzenDatePicker<DateTime>>(parameters => parameters
+                .Add(p => p.Value, initialDate)
+                .Add(p => p.ShowTime, true)
+                .Add(p => p.ShowTimeOkButton, false)
+                .Add(p => p.HourFormat, "12")
+                .Add(p => p.ValueChanged, next => { value = next; })
+                .Add(p => p.Change, _ => { changeCount++; }));
+
+            await component.InvokeAsync(() => component.Find(".rz-datepicker-trigger").MouseDown());
+            component.SetParametersAndRender(parameters => parameters.Add(p => p.ReadOnly, true));
+
+            var target = component.Find(selector);
+
+            if (target.HasAttribute("disabled"))
+            {
+                Assert.Equal("true", target.GetAttribute("aria-disabled"));
+            }
+            else
+            {
+                await component.InvokeAsync(() => target.Click());
+            }
+
+            Assert.Equal(initialDate, value);
+            Assert.Equal(0, changeCount);
+            Assert.Equal(initialDate, component.Instance.Value);
+        }
+
+        [Fact]
+        public async Task DatePicker_OkButton_DoesNotCommitPendingTime_WhenReadOnlyAfterOpening()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var initialDate = new DateTime(2024, 6, 15, 9, 30, 0);
+            var value = initialDate;
+            var changeCount = 0;
+            var okCount = 0;
+            var component = ctx.RenderComponent<RadzenDatePicker<DateTime>>(parameters => parameters
+                .Add(p => p.Value, initialDate)
+                .Add(p => p.ShowTime, true)
+                .Add(p => p.ShowTimeOkButton, true)
+                .Add(p => p.ValueChanged, next => { value = next; })
+                .Add(p => p.OkClick, _ => { okCount++; })
+                .Add(p => p.Change, _ => { changeCount++; }));
+
+            await component.InvokeAsync(() => component.Find(".rz-datepicker-trigger").MouseDown());
+            await component.InvokeAsync(() => component.Find(".rz-hour-picker .rz-numeric-up").Click());
+            component.SetParametersAndRender(parameters => parameters.Add(p => p.ReadOnly, true));
+
+            await component.InvokeAsync(() => component.Find(".rz-timepicker button.rz-secondary").Click());
+
+            Assert.Equal(initialDate, value);
+            Assert.Equal(0, changeCount);
+            Assert.Equal(0, okCount);
+            Assert.Equal(initialDate, component.Instance.Value);
+        }
+
         [Fact]
         public void DatePicker_WithoutOkButton_DayClick_ImmediatelyCommits()
         {
@@ -1966,6 +2074,34 @@ namespace Radzen.Blazor.Tests
         }
 
         [Fact]
+        public void DatePicker_OtherMonthDays_MarkOnlyTheCell()
+        {
+            using var ctx = new TestContext();
+            ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+            ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
+
+            var component = ctx.RenderComponent<RadzenDatePicker<DateTime>>(parameters =>
+            {
+                parameters.Add(p => p.Value, new DateTime(2025, 1, 15));
+                parameters.Add(p => p.Inline, true);
+            });
+
+            var otherMonthCells = component.FindAll("td.rz-calendar-other-month:not(.rz-calendar-week-number)");
+            Assert.NotEmpty(otherMonthCells);
+            Assert.All(otherMonthCells, cell =>
+            {
+                var day = cell.QuerySelector("span.rz-state-default");
+                Assert.NotNull(day);
+                Assert.DoesNotContain("rz-calendar-other-month", day.ClassList);
+            });
+            Assert.Empty(component.FindAll(".rz-calendar-other-month .rz-calendar-other-month"));
+
+            var currentMonthCells = component.FindAll("td[role='gridcell']:not(.rz-calendar-other-month)");
+            Assert.Equal(31, currentMonthCells.Count);
+            Assert.All(currentMonthCells, cell => Assert.DoesNotContain("rz-calendar-other-month", cell.QuerySelector("span")!.ClassList));
+        }
+
+        [Fact]
         public void DatePicker_NonGregorianCalendar_DayClick_SetsCorrectValue()
         {
             using var ctx = new TestContext();
@@ -1986,7 +2122,7 @@ namespace Radzen.Blazor.Tests
 
             // Click on day "10"
             var dayCells = component.FindAll("td[role='button'] span.rz-state-default");
-            var day10 = dayCells.FirstOrDefault(c => c.TextContent.Trim() == "10" && !c.ClassList.Contains("rz-calendar-other-month"));
+            var day10 = dayCells.FirstOrDefault(c => c.TextContent.Trim() == "10" && !c.ParentElement!.ClassList.Contains("rz-calendar-other-month"));
 
             if (day10 != null)
             {

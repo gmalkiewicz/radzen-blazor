@@ -390,6 +390,8 @@ namespace Radzen.Blazor {
         public static string DataGrid_GroupPanelText { get { return ResourceManager.GetString("DataGrid_GroupPanelText", resourceCulture); } }
         public static string DataGrid_ExpandAllTitle { get { return ResourceManager.GetString("DataGrid_ExpandAllTitle", resourceCulture); } }
         public static string DataGrid_CollapseAllTitle { get { return ResourceManager.GetString("DataGrid_CollapseAllTitle", resourceCulture); } }
+        public static string DataGrid_ExpandAllGroupsTitle { get { return ResourceManager.GetString("DataGrid_ExpandAllGroupsTitle", resourceCulture); } }
+        public static string DataGrid_CollapseAllGroupsTitle { get { return ResourceManager.GetString("DataGrid_CollapseAllGroupsTitle", resourceCulture); } }
         public static string DatePicker_CalendarWeekTitle { get { return ResourceManager.GetString("DatePicker_CalendarWeekTitle", resourceCulture); } }
         public static string DatePicker_ToggleAriaLabel { get { return ResourceManager.GetString("DatePicker_ToggleAriaLabel", resourceCulture); } }
         public static string DatePicker_PopupAriaLabel { get { return ResourceManager.GetString("DatePicker_PopupAriaLabel", resourceCulture); } }
@@ -604,6 +606,7 @@ namespace Radzen.Blazor {
         public static string Tabs_MoreAriaLabel { get { return ResourceManager.GetString("Tabs_MoreAriaLabel", resourceCulture); } }
         public static string Tabs_ScrollBackwardAriaLabel { get { return ResourceManager.GetString("Tabs_ScrollBackwardAriaLabel", resourceCulture); } }
         public static string Tabs_ScrollForwardAriaLabel { get { return ResourceManager.GetString("Tabs_ScrollForwardAriaLabel", resourceCulture); } }
+        public static string Tabs_CloseTitle { get { return ResourceManager.GetString("Tabs_CloseTitle", resourceCulture); } }
         public static string TimeSpanPicker_TogglePopupAriaLabel { get { return ResourceManager.GetString("TimeSpanPicker_TogglePopupAriaLabel", resourceCulture); } }
         public static string TimeSpanPicker_PopupAriaLabel { get { return ResourceManager.GetString("TimeSpanPicker_PopupAriaLabel", resourceCulture); } }
         public static string TimeSpanPicker_ClearAriaLabel { get { return ResourceManager.GetString("TimeSpanPicker_ClearAriaLabel", resourceCulture); } }

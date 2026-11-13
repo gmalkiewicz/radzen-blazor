@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Components;
 using System.Collections.Generic;
 
@@ -18,7 +19,7 @@ public partial class SheetEditorHighlight : ComponentBase
 
     private List<HighlightToken> GetHighlightTokens()
     {
-        if (string.IsNullOrEmpty(Value) || !Value.StartsWith('='))
+        if (string.IsNullOrEmpty(Value) || !Value.StartsWith('=', StringComparison.Ordinal))
         {
             return [new() { Text = Value, Class = "rz-default-highlight" }];
         }
@@ -70,7 +71,7 @@ public partial class SheetEditorHighlight : ComponentBase
             FormulaTokenType.StringLiteral => "rz-string-highlight",
             FormulaTokenType.CellIdentifier or FormulaTokenType.ColumnIdentifier or FormulaTokenType.RowIdentifier => "rz-cell-highlight",
             FormulaTokenType.Identifier => "rz-function-highlight",
-            FormulaTokenType.Plus or FormulaTokenType.Minus or FormulaTokenType.Star or FormulaTokenType.Slash or FormulaTokenType.Ampersand
+            FormulaTokenType.Plus or FormulaTokenType.Minus or FormulaTokenType.Star or FormulaTokenType.Slash or FormulaTokenType.Caret or FormulaTokenType.Percent or FormulaTokenType.Ampersand
                 or FormulaTokenType.Equals or FormulaTokenType.EqualsGreaterThan or FormulaTokenType.LessThanGreaterThan
                 or FormulaTokenType.LessThan or FormulaTokenType.LessThanOrEqual or FormulaTokenType.GreaterThan or FormulaTokenType.GreaterThanOrEqual
                 or FormulaTokenType.OpenParen or FormulaTokenType.CloseParen or FormulaTokenType.Comma or FormulaTokenType.Colon => "rz-operator-highlight",

@@ -2534,17 +2534,30 @@ window.Radzen = {
           Radzen.uploadChange(e.target);
       }
   },
-  uploads: function (uploadComponent, id) {
+  uploads: function (uploadComponent, id, queue = false) {
     if (!Radzen.uploadComponents) {
       Radzen.uploadComponents = {};
     }
-    Radzen.uploadComponents[id] = uploadComponent;
+    if (queue) {
+      var state = Radzen.uploadComponents[id];
+      if (!state || !state.queue) {
+        state = { queue: true, files: [], localFiles: [], version: 0, requests: new Set(),
+          invokeMethodAsync: function(...args) { return this.reference.invokeMethodAsync(...args); } };
+      }
+      state.reference = uploadComponent;
+      Radzen.uploadComponents[id] = state;
+    } else {
+      Radzen.uploadComponents[id] = uploadComponent;
+    }
   },
-  uploadChange: function (fileInput) {
+  uploadChange: function (fileInput, selectedFiles, append = false) {
+    var selection = selectedFiles || Array.from(fileInput.files);
+    if (!selection.length) return;
     var files = [];
-    for (var i = 0; i < fileInput.files.length; i++) {
-      var file = fileInput.files[i];
+    for (var i = 0; i < selection.length; i++) {
+      var file = selection[i];
       files.push({
+        Id: 'upload-' + (Radzen.uploadFileId = (Radzen.uploadFileId || 0) + 1),
         Name: file.name,
         Size: file.size,
         ContentType: file.type,
@@ -2555,7 +2568,7 @@ window.Radzen = {
     var uploadComponent =
       Radzen.uploadComponents && Radzen.uploadComponents[fileInput.id];
     if (uploadComponent) {
-      if (uploadComponent.localFiles) {
+      if (!append && uploadComponent.localFiles) {
         // Clear any previously created preview URL(s)
         for (var i = 0; i < uploadComponent.localFiles.length; i++) {
           var file = uploadComponent.localFiles[i];
@@ -2565,9 +2578,11 @@ window.Radzen = {
         }
       }
 
-      uploadComponent.files = Array.from(fileInput.files);
-      uploadComponent.localFiles = files;
-      try { suppressDisposed(uploadComponent.invokeMethodAsync('RadzenUpload.OnChange', files)); } catch { }
+      uploadComponent.files = append ? uploadComponent.files.concat(selection) : selection;
+      uploadComponent.localFiles = append ? uploadComponent.localFiles.concat(files) : files;
+      try { suppressDisposed(uploadComponent.queue
+        ? uploadComponent.invokeMethodAsync('RadzenUpload.OnQueueChange', uploadComponent.localFiles, ++uploadComponent.version)
+        : uploadComponent.invokeMethodAsync('RadzenUpload.OnChange', files)); } catch { }
     }
 
     for (var i = 0; i < fileInput.files.length; i++) {
@@ -2577,13 +2592,15 @@ window.Radzen = {
       }
     }
   },
-  removeFileFromUpload: function (ref, name, id) {
-    var uploadComponent = (Radzen.uploadComponents && Radzen.uploadComponents[ref]) ?? Radzen.uploadComponents[id];
+  removeFileFromUpload: function (ref, name, id, fileId) {
+    var uploadComponent = Radzen.uploadComponents && (Radzen.uploadComponents[id] || Radzen.uploadComponents[ref]);
     if (!uploadComponent) return;
     if (!uploadComponent.files) return;
-    var file = uploadComponent.files.find(function (f) { return f.name == name; })
+    var index = fileId ? uploadComponent.localFiles.findIndex(f => f.Id === fileId) :
+      uploadComponent.files.findIndex(f => f.name === name);
+    var file = uploadComponent.files[index];
     if (!file) { return; }
-    var localFile = uploadComponent.localFiles.find(function (f) { return f.Name == name; });
+    var localFile = uploadComponent.localFiles[index];
     if (localFile) {
       URL.revokeObjectURL(localFile.Url);
       var localIndex = uploadComponent.localFiles.indexOf(localFile);
@@ -2591,23 +2608,52 @@ window.Radzen = {
         uploadComponent.localFiles.splice(localIndex, 1);
       }
     }
-    var index = uploadComponent.files.indexOf(file)
     if (index != -1) {
         uploadComponent.files.splice(index, 1);
     }
-    var fileInput = document.getElementById(id).querySelector('input[type="file"]');
+    var element = document.getElementById(id);
+    var fileInput = element && (element.matches('input[type="file"]') ? element : element.querySelector('input[type="file"]'));
     if (fileInput && uploadComponent.files.length == 0) {
         fileInput.value = '';
     }
+    return { Files: uploadComponent.localFiles, Version: ++uploadComponent.version };
+  },
+  clearUpload: function(id) {
+    var component = Radzen.uploadComponents && Radzen.uploadComponents[id];
+    if (!component) return null;
+    component.localFiles.forEach(f => { if (f.Url) URL.revokeObjectURL(f.Url); });
+    component.files = [];
+    component.localFiles = [];
+    var element = document.getElementById(id);
+    var input = element && (element.matches('input[type="file"]') ? element : element.querySelector('input[type="file"]'));
+    if (input) input.value = '';
+    return { Files: [], Version: ++component.version };
+  },
+  destroyUpload: function(id) {
+    var component = Radzen.uploadComponents && Radzen.uploadComponents[id];
+    if (!component || !component.queue) return;
+    delete Radzen.uploadComponents[id];
+    component.requests.forEach(xhr => xhr.abort());
+    component.localFiles.forEach(f => { if (f.Url) URL.revokeObjectURL(f.Url); });
+    component.files = [];
+    component.localFiles = [];
   },
   removeFileFromFileInput: function (fileInput) {
     fileInput.value = '';
   },
-  upload: function (fileInput, url, multiple, clear, parameterName, method = 'POST', stream = false) {
+  upload: function (fileInput, url, multiple, clear, parameterName, method = 'POST', stream = false, selectedFiles) {
     var uploadComponent = Radzen.uploadComponents && Radzen.uploadComponents[fileInput.id];
     if (!uploadComponent) { return; }
-    if (!uploadComponent.files || clear) {
+    if (selectedFiles) {
+        uploadComponent.files = selectedFiles;
+    } else if (!uploadComponent.files || clear) {
         uploadComponent.files = Array.from(fileInput.files);
+    }
+    if (uploadComponent.queue && (selectedFiles || clear)) {
+      uploadComponent.localFiles.forEach(f => { if (f.Url) URL.revokeObjectURL(f.Url); });
+      uploadComponent.localFiles = uploadComponent.files.map(f => ({
+        Id: 'upload-' + (Radzen.uploadFileId = (Radzen.uploadFileId || 0) + 1), Name: f.name, Size: f.size
+      }));
     }
     
 	function asFormData() {
@@ -2616,7 +2662,7 @@ window.Radzen = {
 		for (var i = 0; i < uploadComponent.files.length; i++) {
 			var file = uploadComponent.files[i];
 			data.append(parameterName || (multiple ? 'files' : 'file'), file, file.name);
-			files.push({Name: file.name, Size: file.size});
+			files.push({Id: uploadComponent.localFiles?.[i]?.Id, Name: file.name, Size: file.size});
 		}
 		return {data, files}
 	}
@@ -2624,7 +2670,7 @@ window.Radzen = {
 	function asStream() {
 		if (uploadComponent.files.length > 0) {
 			var file = uploadComponent.files[0];
-			return {data: file, files: [{Name: file.name, Size: file.size}]};
+			return {data: file, files: [{Id: uploadComponent.localFiles?.[0]?.Id, Name: file.name, Size: file.size}]};
 		}
 		return {data: null, files: []}
 	}
@@ -2633,12 +2679,15 @@ window.Radzen = {
 	var {data, files} = stream ? asStream() : asFormData();
 	
     var xhr = new XMLHttpRequest();
+    var requestOwner = uploadComponent;
+    if (requestOwner.requests) requestOwner.requests.add(xhr);
+    xhr.onloadend = function() { if (requestOwner.requests) requestOwner.requests.delete(xhr); };
     xhr.withCredentials = true;
     xhr.upload.onprogress = function (e) {
       if (e.lengthComputable) {
         var uploadComponent =
           Radzen.uploadComponents && Radzen.uploadComponents[fileInput.id];
-        if (uploadComponent) {
+        if (uploadComponent && (!requestOwner.queue || uploadComponent === requestOwner)) {
           var progress = parseInt((e.loaded / e.total) * 100);
           try { uploadComponent.invokeMethodAsync(
             'RadzenUpload.OnProgress',
@@ -2661,7 +2710,7 @@ window.Radzen = {
         var status = xhr.status;
         var uploadComponent =
           Radzen.uploadComponents && Radzen.uploadComponents[fileInput.id];
-        if (uploadComponent) {
+        if (uploadComponent && (!requestOwner.queue || uploadComponent === requestOwner)) {
           if (status === 0 || (status >= 200 && status < 400)) {
             try { uploadComponent.invokeMethodAsync(
               'RadzenUpload.OnComplete',
@@ -2678,6 +2727,7 @@ window.Radzen = {
       }
     };
     try { uploadComponent.invokeMethodAsync('GetHeaders').then(function (headers) {
+      if (requestOwner.queue && Radzen.uploadComponents?.[fileInput.id] !== requestOwner) return;
       xhr.open(method, url, true);
       for (var name in headers) {
         xhr.setRequestHeader(name, headers[name]);
@@ -4909,6 +4959,22 @@ window.Radzen = {
     return await new Promise(function (resolve) {
       canvas.toBlob(resolve, 'image/png');
     });
+  },
+  getImageFileSize: async function (input) {
+    var file = input && input.files && input.files[0];
+    if (!file) return null;
+
+    var url = URL.createObjectURL(file);
+    try {
+      var img = new Image();
+      img.src = url;
+      await img.decode();
+      return [img.naturalWidth, img.naturalHeight];
+    } catch (e) {
+      return null;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   },
   downloadSvgAsPng: async function (svg, fileName, width, height) {
     var blob = await this.svgToPng(svg, width, height);
@@ -7264,36 +7330,25 @@ window.Radzen = {
       // grid's rather than one nested inside it.
       var table = gridElement.querySelector('.rz-grid-table');
       if (!table) return;
-      // Get frozen cell positions from the header row first, then apply to all rows
       var headerRow = table.querySelector(':scope > thead > tr');
       if (!headerRow) return;
       var leftHeaderCells = Radzen.frozenCellsOf(headerRow, 'left');
       var rightHeaderCells = Radzen.frozenCellsOf(headerRow, 'right');
-      // Calculate offsets from header widths
-      var leftOffsets = [];
       var offset = 0;
       for (var i = 0; i < leftHeaderCells.length; i++) {
-          leftOffsets.push(offset);
+          table.style.setProperty('--rz-grid-frozen-left-' + i, offset + 'px');
           offset += leftHeaderCells[i].getBoundingClientRect().width;
       }
-      var rightOffsets = [];
+      for (var i = leftHeaderCells.length; table.style.getPropertyValue('--rz-grid-frozen-left-' + i) !== ''; i++) {
+          table.style.removeProperty('--rz-grid-frozen-left-' + i);
+      }
       offset = 0;
       for (var i = rightHeaderCells.length - 1; i >= 0; i--) {
-          rightOffsets[i] = offset;
+          table.style.setProperty('--rz-grid-frozen-right-' + i, offset + 'px');
           offset += rightHeaderCells[i].getBoundingClientRect().width;
       }
-      // Apply offsets to this grid's own rows
-      var rows = table.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr');
-      for (var r = 0; r < rows.length; r++) {
-          var row = rows[r];
-          var leftCells = Radzen.frozenCellsOf(row, 'left');
-          for (var i = 0; i < leftCells.length && i < leftOffsets.length; i++) {
-              leftCells[i].style.setProperty('inset-inline-start', leftOffsets[i] + 'px');
-          }
-          var rightCells = Radzen.frozenCellsOf(row, 'right');
-          for (var i = 0; i < rightCells.length && i < rightOffsets.length; i++) {
-              rightCells[i].style.setProperty('inset-inline-end', rightOffsets[i] + 'px');
-          }
+      for (var i = rightHeaderCells.length; table.style.getPropertyValue('--rz-grid-frozen-right-' + i) !== ''; i++) {
+          table.style.removeProperty('--rz-grid-frozen-right-' + i);
       }
   },
   startColumnResize: function(id, grid, columnIndex, clientX) {
@@ -7916,7 +7971,74 @@ window.Radzen = {
     }
 };
 
-Radzen.registerFabMenu = function(element, dotnet){
+Radzen.fabMenuItems = function(element) {
+  return Array.prototype.slice.call(element.querySelectorAll('.rz-fabmenu-items button:not([disabled])'));
+};
+Radzen.fabMenuToggle = function(element) {
+  return element.querySelector(':scope > button');
+};
+Radzen.createFabMenu = function(element, dotnet) {
+  if (!element || typeof element.addEventListener !== 'function') return;
+  Radzen.destroyFabMenu(element);
+  var invoke = function(method, arg) {
+    try { suppressDisposed(arg === undefined ? dotnet.invokeMethodAsync(method) : dotnet.invokeMethodAsync(method, arg)); } catch { }
+  };
+  var onKeyDown = function(e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    var key = e.key;
+    var open = !!element.querySelector('.rz-fabmenu-items');
+    if (!open) {
+      if ((key === 'ArrowDown' || key === 'ArrowUp') && e.target === Radzen.fabMenuToggle(element)) {
+        e.preventDefault();
+        invoke('OpenAsync', true);
+      }
+      return;
+    }
+    if (key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      invoke('CloseAsync');
+      var toggle = Radzen.fabMenuToggle(element);
+      if (toggle) toggle.focus({ preventScroll: true });
+      return;
+    }
+    if (key === 'Tab') {
+      invoke('CloseAsync');
+      return;
+    }
+    var items = Radzen.fabMenuItems(element);
+    if (!items.length) return;
+    var index = items.indexOf(document.activeElement);
+    var next = -1;
+    if (key === 'ArrowDown' || key === 'ArrowRight') next = index < 0 ? 0 : (index + 1) % items.length;
+    else if (key === 'ArrowUp' || key === 'ArrowLeft') next = index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length;
+    else if (key === 'Home') next = 0;
+    else if (key === 'End') next = items.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    items[next].focus();
+  };
+  var onFocusIn = function(e) {
+    if (e.target && e.target.closest && e.target.closest('.rz-fabmenu-items')) {
+      element.__rzFabMenuHadFocus = true;
+    }
+  };
+  element.addEventListener('keydown', onKeyDown);
+  element.addEventListener('focusin', onFocusIn);
+  element.__rzFabMenu = { keydown: onKeyDown, focusin: onFocusIn };
+};
+Radzen.destroyFabMenu = function(element) {
+  if (!element) return;
+  Radzen.unregisterFabMenu(element);
+  var handlers = element.__rzFabMenu;
+  if (handlers) {
+    element.removeEventListener('keydown', handlers.keydown);
+    element.removeEventListener('focusin', handlers.focusin);
+    delete element.__rzFabMenu;
+  }
+  delete element.__rzFabMenuHadFocus;
+};
+Radzen.registerFabMenu = function(element, dotnet, focusFirstItem){
   if(!element) return;
   if(element.__rzOutsideClickHandler){
     document.removeEventListener('click', element.__rzOutsideClickHandler);
@@ -7929,6 +8051,13 @@ Radzen.registerFabMenu = function(element, dotnet){
   };
   element.__rzOutsideClickHandler = handler;
   document.addEventListener('click', handler);
+  if (focusFirstItem) {
+    var first = Radzen.fabMenuItems(element)[0];
+    if (first) {
+      element.__rzFabMenuHadFocus = true;
+      first.focus();
+    }
+  }
 };
 Radzen.unregisterFabMenu = function(element){
   if(!element) return;
@@ -7936,6 +8065,14 @@ Radzen.unregisterFabMenu = function(element){
   if(handler){
     document.removeEventListener('click', handler);
     delete element.__rzOutsideClickHandler;
+  }
+  if (element.__rzFabMenuHadFocus) {
+    delete element.__rzFabMenuHadFocus;
+    var active = document.activeElement;
+    if (!active || active === document.body || element.contains(active)) {
+      var toggle = Radzen.fabMenuToggle(element);
+      if (toggle) toggle.focus({ preventScroll: true });
+    }
   }
 };
 Radzen.chatIsNearBottom = function(container, threshold) {
@@ -8063,13 +8200,31 @@ Radzen.createDataGrid = function(el) {
   }
   el.addEventListener('click', onClick);
   el.addEventListener('mousedown', onMousedown);
+  var table = el.querySelector('.rz-grid-table');
+  var frozenObserver = null;
+  if (table && typeof ResizeObserver !== 'undefined') {
+    frozenObserver = new ResizeObserver(function () {
+      Radzen.updateFrozenColumnPositions(el);
+      var headerRow = table.querySelector(':scope > thead > tr');
+      if (!headerRow) return;
+      var cells = Radzen.frozenCellsOf(headerRow, 'left').concat(Radzen.frozenCellsOf(headerRow, 'right'));
+      for (var i = 0; i < cells.length; i++) {
+        frozenObserver.observe(cells[i]);
+      }
+    });
+    frozenObserver.observe(table);
+  }
   return { dispose: function() {
     el.removeEventListener('click', onClick);
     el.removeEventListener('mousedown', onMousedown);
+    if (frozenObserver) {
+      frozenObserver.disconnect();
+    }
   }};
 };
-Radzen.createDropDown = function(el) {
+Radzen.createDropDown = function(el, labelName) {
   if (!el) return { dispose: function() {} };
+  if (labelName) Radzen.linkLabel(el, labelName);
   function onMousedown() { Radzen.activeElement = null; }
   function onFilterClick(e) {
     var input = e.target.closest('.rz-multiselect-filter-container input');
@@ -8202,23 +8357,71 @@ Radzen.createMenu = function(el, clickToOpen) {
     });
   }};
 };
-Radzen.createUpload = function(el, url, auto, multiple, parameterName, method, stream) {
+Radzen.validateUploadFiles = function(files, maxFileSize, allowedExtensions) {
+  var accepted = [], rejected = [];
+  files.forEach(function(file) {
+    var reason = maxFileSize != null && file.size > maxFileSize ? 0 :
+      allowedExtensions.length && !allowedExtensions.some(function(extension) {
+        return file.name.toLowerCase().endsWith(extension);
+      }) ? 1 : null;
+    if (reason == null) {
+      accepted.push(file);
+    } else {
+      rejected.push({ File: { Name: file.name, Size: file.size, ContentType: file.type,
+        LastModified: new Date(file.lastModified).toISOString() }, Reason: reason });
+    }
+  });
+  return { accepted: accepted, rejected: rejected };
+};
+Radzen.createUpload = function(el, url, auto, multiple, parameterName, method, stream, maxFileSize = null, allowedExtensions = [], appendFiles = false) {
   if (!el) return { dispose: function() {} };
   var choose = el.querySelector('.rz-fileupload-choose');
   var fileInput = el.querySelector('input[type=file]');
   function onKeydown(e) {
     if (e.keyCode === 32 || e.keyCode === 13) {
       e.preventDefault();
-      var child = choose.firstElementChild;
-      if (child) child.click();
+      if (fileInput && !fileInput.disabled) fileInput.click();
     }
   }
   function onStopKeydown(e) { e.stopPropagation(); }
+  function onDisabledDrop(e) {
+    if (fileInput && fileInput.disabled) {
+      e.preventDefault();
+    }
+  }
   function onChange(e) {
-    Radzen.uploadInputChange(e, url, auto, multiple, true, parameterName, method, stream);
+    var append = appendFiles && multiple && !auto && !stream;
+    if (maxFileSize == null && !allowedExtensions.length && !append) {
+      Radzen.uploadInputChange(e, url, auto, multiple, true, parameterName, method, stream);
+      return;
+    }
+    if (fileInput.disabled || !fileInput.files.length) return;
+    var extensions = allowedExtensions.slice();
+    var limit = maxFileSize;
+    var result = Radzen.validateUploadFiles(Array.from(fileInput.files), limit, extensions);
+    if (result.accepted.length) {
+      if (auto) {
+        Radzen.upload(fileInput, url, multiple, true, parameterName, method, stream, result.accepted);
+      } else {
+        Radzen.uploadChange(fileInput, result.accepted, append);
+      }
+    }
+    fileInput.value = '';
+    if (result.rejected.length) {
+      var component = Radzen.uploadComponents && Radzen.uploadComponents[fileInput.id];
+      if (component) {
+        try { suppressDisposed(component.invokeMethodAsync('RadzenUpload.OnRejected', {
+          Files: result.rejected, MaxFileSize: limit, AllowedExtensions: extensions
+        })); } catch { }
+      }
+    }
   }
   function onImgError() { this.style.display = 'none'; }
-  if (choose) choose.addEventListener('keydown', onKeydown);
+  if (choose) {
+    choose.addEventListener('keydown', onKeydown);
+    choose.addEventListener('dragover', onDisabledDrop);
+    choose.addEventListener('drop', onDisabledDrop);
+  }
   if (fileInput) {
     fileInput.addEventListener('keydown', onStopKeydown);
     if (url) fileInput.addEventListener('change', onChange);
@@ -8226,8 +8429,15 @@ Radzen.createUpload = function(el, url, auto, multiple, parameterName, method, s
   el.querySelectorAll('.rz-fileupload-row img').forEach(function(img) {
     img.addEventListener('error', onImgError);
   });
-  return { dispose: function() {
-    if (choose) choose.removeEventListener('keydown', onKeydown);
+  return { updateAppendFiles: function(value) { appendFiles = value; }, updateValidation: function(size, extensions) {
+    maxFileSize = size;
+    allowedExtensions = extensions || [];
+  }, dispose: function() {
+    if (choose) {
+      choose.removeEventListener('keydown', onKeydown);
+      choose.removeEventListener('dragover', onDisabledDrop);
+      choose.removeEventListener('drop', onDisabledDrop);
+    }
     if (fileInput) {
       fileInput.removeEventListener('keydown', onStopKeydown);
       if (url) fileInput.removeEventListener('change', onChange);
@@ -8940,6 +9150,17 @@ Radzen.createVirtualItemContainer = (scrollable, content, ref) => {
 Radzen.scrollElementTo = (scrollable, left, top) => {
   scrollable.scrollTo({ top: top, left: Radzen.isRTL(scrollable) ? -left : left });
 };
+Radzen.linkLabel = function (el, name) {
+  if (!el || !name || typeof el.setAttribute !== 'function') return;
+  var escaped = window.CSS && CSS.escape ? CSS.escape(name) : name.replace(/"/g, '\\"');
+  var label = document.querySelector('label[for="' + escaped + '"]');
+  if (!label || el.contains(label)) return;
+  if (!label.id) {
+    label.id = name + '-label';
+  }
+  el.setAttribute('aria-labelledby', label.id);
+};
+
 Radzen.createFormField = function(el) {
   if (!el || typeof el.addEventListener !== 'function') return { dispose: function() {} };
   function onFocusIn() { el.classList.add('rz-state-focused'); }
@@ -9112,13 +9333,22 @@ Radzen.createSignaturePad = function(element, ref, strokeColor, strokeWidth, dis
 Radzen.itemListKeydown = function (e) {
   var el = e.target;
   if (!el || !el.classList) return;
+  if (el.classList.contains('rz-chip')) {
+    var chipKey = e.code ? e.code : e.key;
+    if (chipKey === 'Space' || chipKey === 'Enter') {
+      e.preventDefault();
+    }
+    return;
+  }
   var radio = el.classList.contains('rz-radio-button-list');
   var checkbox = el.classList.contains('rz-checkbox-list');
-  if (!radio && !checkbox) return;
+  var chips = !radio && !checkbox && el.closest ? el.closest('.rz-chip-list') : null;
+  if (!radio && !checkbox && !chips) return;
   var key = e.code ? e.code : e.key;
   if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown') {
     var horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
-    if (radio || el.classList.contains(horizontal ? 'rz-checkbox-list-horizontal' : 'rz-checkbox-list-vertical')) {
+    var orientation = (checkbox ? 'rz-checkbox-list' : 'rz-chip-list') + (horizontal ? '-horizontal' : '-vertical');
+    if (radio || (chips || el).classList.contains(orientation)) {
       e.preventDefault();
     }
   } else if (key === 'Home' || key === 'End' || key === 'Space' || key === 'Enter') {

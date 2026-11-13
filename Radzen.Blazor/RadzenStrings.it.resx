@@ -1078,6 +1078,12 @@
   <data name="DataGrid_CollapseAllTitle" xml:space="preserve">
     <value>Comprimi tutto</value>
   </data>
+  <data name="DataGrid_ExpandAllGroupsTitle" xml:space="preserve">
+    <value>Espandi tutti i gruppi</value>
+  </data>
+  <data name="DataGrid_CollapseAllGroupsTitle" xml:space="preserve">
+    <value>Comprimi tutti i gruppi</value>
+  </data>
   <!-- DatePicker -->
   <data name="DatePicker_CalendarWeekTitle" xml:space="preserve">
     <value>#</value>
@@ -1772,6 +1778,9 @@
   </data>
   <data name="Tabs_ScrollForwardAriaLabel" xml:space="preserve">
     <value>Scorri le schede avanti</value>
+  </data>
+  <data name="Tabs_CloseTitle" xml:space="preserve">
+    <value>Chiudi scheda</value>
   </data>
   <!-- TimeSpanPicker -->
   <data name="TimeSpanPicker_TogglePopupAriaLabel" xml:space="preserve">

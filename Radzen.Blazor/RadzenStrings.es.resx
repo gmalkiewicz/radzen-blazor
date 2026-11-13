@@ -1078,6 +1078,12 @@
   <data name="DataGrid_CollapseAllTitle" xml:space="preserve">
     <value>Contraer todo</value>
   </data>
+  <data name="DataGrid_ExpandAllGroupsTitle" xml:space="preserve">
+    <value>Expandir todos los grupos</value>
+  </data>
+  <data name="DataGrid_CollapseAllGroupsTitle" xml:space="preserve">
+    <value>Contraer todos los grupos</value>
+  </data>
   <!-- DatePicker -->
   <data name="DatePicker_CalendarWeekTitle" xml:space="preserve">
     <value>#</value>
@@ -1772,6 +1778,9 @@
   </data>
   <data name="Tabs_ScrollForwardAriaLabel" xml:space="preserve">
     <value>Desplazar pestañas hacia adelante</value>
+  </data>
+  <data name="Tabs_CloseTitle" xml:space="preserve">
+    <value>Cerrar pestaña</value>
   </data>
   <!-- TimeSpanPicker -->
   <data name="TimeSpanPicker_TogglePopupAriaLabel" xml:space="preserve">

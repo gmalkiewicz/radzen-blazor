@@ -624,7 +624,7 @@ namespace Radzen.Blazor
 
                 if (ch == '\'' || ch == '"')
                 {
-                    var close = format.IndexOf(ch, i + 1);
+                    var close = format.IndexOf(ch, i + 1, StringComparison.Ordinal);
                     if (close < 0)
                     {
                         close = format.Length;
@@ -928,8 +928,10 @@ namespace Radzen.Blazor
 
         /// <summary>
         /// Gets the accessible name applied to the spinbutton input. Returns <c>null</c> when the consumer has already
-        /// supplied an <c>aria-label</c> or <c>aria-labelledby</c> attribute via <see cref="RadzenComponent.Attributes" /> or
-        /// <see cref="InputAttributes" />, so a consumer-supplied accessible name is never overridden.
+        /// supplied an <c>aria-label</c> or <c>aria-labelledby</c> attribute via <see cref="RadzenComponent.Attributes" />, so a
+        /// consumer-supplied accessible name is never overridden. When <see cref="InputAttributes" /> carries an <c>aria-label</c>
+        /// that value is returned, because the markup sets <c>aria-label</c> after splatting <see cref="InputAttributes" /> and
+        /// Blazor keeps the last duplicate attribute; returning <c>null</c> there would remove the consumer's label.
         /// </summary>
         protected string? InputAriaLabel
         {
@@ -940,14 +942,30 @@ namespace Radzen.Blazor
                     return null;
                 }
 
-                if (InputAttributes != null && (InputAttributes.ContainsKey("aria-label") || InputAttributes.ContainsKey("aria-labelledby")))
+                if (InputAttributes != null)
                 {
-                    return null;
+                    if (InputAttributes.TryGetValue("aria-label", out var inputAriaLabel))
+                    {
+                        return inputAriaLabel?.ToString();
+                    }
+
+                    if (InputAttributes.ContainsKey("aria-labelledby"))
+                    {
+                        return null;
+                    }
                 }
 
-                return !string.IsNullOrEmpty(AriaLabel) ? AriaLabel : Name;
+                return !string.IsNullOrEmpty(AriaLabel) ? AriaLabel : FormFieldContext != null ? null : Name;
             }
         }
+
+        /// <summary>
+        /// Gets the id of the input element: <see cref="FormComponent{T}.Name"/> when set, otherwise an id derived from the component id.
+        /// </summary>
+        protected string InputId => Name ?? $"{GetId()}-input";
+
+        /// <inheritdoc />
+        protected override string? LabelTargetId => InputId;
 
         private string? upAriaLabel;
 
