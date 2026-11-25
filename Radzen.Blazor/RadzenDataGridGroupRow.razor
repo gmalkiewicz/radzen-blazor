@@ -30,7 +30,7 @@
             <span class="rz-column-title"></span>
             @if (rowArgs?.Item1.Expandable == true)
             {
-                @if (!Grid.AllowGroupExpand)
+                @if (!Grid.AllowGroupExpand && !Grid.GroupToggleClick.HasDelegate)
                 {
                     <span class="@(Grid.ExpandedGroupItemStyle(this, Grid.allGroupsExpanded != null ? Grid.allGroupsExpanded : rowArgs?.Item1.Expanded))"></span>
                 }
@@ -39,9 +39,14 @@
                     <button type="button" tabindex="-1" id="@(Grid.GridId() + Group.GetHashCode())"
                             aria-label=@Grid.ExpandGroupAriaLabel
                             aria-expanded="@(Grid.IsGroupItemExpanded(this).ToString().ToLowerInvariant())"
-                            disabled="@(!Grid.AllowGroupExpand)"
                             class="rz-button rz-button-sm rz-button-icon-only rz-variant-text rz-base rz-shade-default"
-                            @onclick="@(_ => Grid.ExpandGroupItem(this, rowArgs?.Item1.Expanded))">
+                            @onclick="@(async _ => {
+                                if (Grid.AllowGroupExpand)
+                                {
+                                    await Grid.ExpandGroupItem(this, rowArgs?.Item1.Expanded);
+                                }
+                                await Grid.GroupToggleClick.InvokeAsync(this);
+                            })">
                         <span class="@(Grid.ExpandedGroupItemStyle(this, Grid.allGroupsExpanded != null ? Grid.allGroupsExpanded : rowArgs?.Item1.Expanded))"></span>
                     </button>
                 }

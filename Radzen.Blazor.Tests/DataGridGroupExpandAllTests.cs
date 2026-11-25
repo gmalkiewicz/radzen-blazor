@@ -1,5 +1,6 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Xunit;
@@ -19,7 +20,8 @@ namespace Radzen.Blazor.Tests
         static IRenderedComponent<RadzenDataGrid<Item>> Render(TestContext ctx, bool showGroupExpandAll = true, bool grouped = true,
             bool showGroupExpandColumn = true, bool? allGroupsExpanded = null, EventCallback<bool?> allGroupsExpandedChanged = default,
             string expandTitle = null, string collapseTitle = null, System.Action<GroupRowRenderEventArgs> groupRowRender = null,
-            bool allowGroupExpand = true, bool nestedGroups = false)
+            bool allowGroupExpand = true, bool nestedGroups = false,
+            EventCallback<RadzenDataGridGroupRow<Item>> groupToggleClick = default, EventCallback<Group> groupRowCollapse = default)
         {
             ctx.JSInterop.Mode = JSRuntimeMode.Loose;
             ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
@@ -48,6 +50,8 @@ namespace Radzen.Blazor.Tests
                 pb.Add(p => p.ShowGroupExpandAll, showGroupExpandAll);
                 pb.Add(p => p.ShowGroupExpandColumn, showGroupExpandColumn);
                 pb.Add(p => p.AllowGroupExpand, allowGroupExpand);
+                pb.Add(p => p.GroupToggleClick, groupToggleClick);
+                pb.Add(p => p.GroupRowCollapse, groupRowCollapse);
                 pb.Add(p => p.AllGroupsExpanded, allGroupsExpanded);
                 pb.Add(p => p.AllGroupsExpandedChanged, allGroupsExpandedChanged);
 
@@ -87,9 +91,8 @@ namespace Radzen.Blazor.Tests
             using var ctx = new TestContext();
             var component = Render(ctx, allowGroupExpand: false, nestedGroups: true);
 
-            var buttons = component.FindAll(".rz-group-row button");
-            Assert.Equal(5, buttons.Count);
-            Assert.All(buttons, button => Assert.True(button.HasAttribute("disabled")));
+            Assert.Empty(component.FindAll(".rz-group-row button"));
+            Assert.Equal(5, component.FindAll(".rz-group-row .rz-row-toggler").Count);
             Assert.Equal(3, DataRowCount(component));
 
             component.SetParametersAndRender(parameters => parameters.Add(p => p.AllowGroupExpand, true));
@@ -111,7 +114,48 @@ namespace Radzen.Blazor.Tests
 
             component.Find(Button).Click();
             Assert.Equal(3, DataRowCount(component));
-            Assert.All(component.FindAll(".rz-group-row button"), button => Assert.True(button.HasAttribute("disabled")));
+            Assert.Empty(component.FindAll(".rz-group-row button"));
+        }
+
+        [Fact]
+        public void GroupToggleClick_CanHandleClickWithoutDefaultToggle()
+        {
+            using var ctx = new TestContext();
+            RadzenDataGridGroupRow<Item> clicked = null;
+            var callback = EventCallback.Factory.Create<RadzenDataGridGroupRow<Item>>(new object(), row => clicked = row);
+            var component = Render(ctx, allowGroupExpand: false, nestedGroups: true, groupToggleClick: callback);
+            var target = component.FindComponents<RadzenDataGridGroupRow<Item>>()[1].Instance;
+
+            component.FindAll(".rz-group-row button")[1].Click();
+
+            Assert.Same(target, clicked);
+            Assert.Equal(1, clicked.Group.Level);
+            Assert.Equal(3, DataRowCount(component));
+
+            component.InvokeAsync(() => component.Instance.ExpandGroupItem(clicked, null)).GetAwaiter().GetResult();
+            Assert.Equal(2, DataRowCount(component));
+        }
+
+        [Fact]
+        public void GroupToggleClick_RunsAfterDefaultToggle_WhenEnabled()
+        {
+            using var ctx = new TestContext();
+            RadzenDataGridGroupRow<Item> clicked = null;
+            var events = new List<string>();
+            var collapse = EventCallback.Factory.Create<Group>(new object(), _ => events.Add("collapse"));
+            var callback = EventCallback.Factory.Create<RadzenDataGridGroupRow<Item>>(new object(), row =>
+            {
+                clicked = row;
+                events.Add("click");
+            });
+            var component = Render(ctx, groupToggleClick: callback, groupRowCollapse: collapse);
+            var target = component.FindComponents<RadzenDataGridGroupRow<Item>>()[0].Instance;
+
+            component.FindAll(".rz-group-row button")[0].Click();
+
+            Assert.Same(target, clicked);
+            Assert.Equal(new[] { "collapse", "click" }, events);
+            Assert.Equal(1, DataRowCount(component));
         }
 
         [Fact]

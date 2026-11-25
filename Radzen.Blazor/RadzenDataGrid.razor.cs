@@ -2601,6 +2601,14 @@ namespace Radzen.Blazor
         public EventCallback<Group> GroupRowCollapse { get; set; }
 
         /// <summary>
+        /// Gets or sets the callback invoked after a group toggle button is clicked.
+        /// The callback receives the group row and runs after the default toggle, if enabled.
+        /// Set <see cref="AllowGroupExpand"/> to <c>false</c> to handle the click without the default toggle.
+        /// </summary>
+        [Parameter]
+        public EventCallback<RadzenDataGridGroupRow<TItem>> GroupToggleClick { get; set; }
+
+        /// <summary>
         /// Gets or sets the row render callback. Use it to set row attributes.
         /// </summary>
         /// <value>The row render callback.</value>
@@ -3589,10 +3597,10 @@ namespace Radzen.Blazor
         public bool ShowGroupExpandColumn { get; set; } = true;
 
         /// <summary>
-        /// Gets or sets whether individual groups can be expanded or collapsed using their toggle buttons.
-        /// This does not affect programmatic toggling or the expand all groups button.
+        /// Gets or sets whether individual group toggle buttons perform the default expand or collapse action.
+        /// This does not affect <see cref="GroupToggleClick"/>, programmatic toggling, or the expand all groups button.
         /// </summary>
-        /// <value><c>true</c> to enable group toggle buttons; otherwise, <c>false</c>. The default is <c>true</c>.</value>
+        /// <value><c>true</c> to enable the default action; otherwise, <c>false</c>. The default is <c>true</c>.</value>
         [Parameter]
         public bool AllowGroupExpand { get; set; } = true;
 
