@@ -30,16 +30,27 @@
             <span class="rz-column-title"></span>
             @if (rowArgs?.Item1.Expandable == true)
             {
-            <button type="button" tabindex="-1" id="@(Grid.GridId() + Group.GetHashCode())" aria-label=@Grid.ExpandGroupAriaLabel
-                    aria-expanded="@(Grid.IsGroupItemExpanded(this).ToString().ToLowerInvariant())"
-                    class="rz-button rz-button-sm rz-button-icon-only rz-variant-text rz-base rz-shade-default"
-                    @onclick="@(_ => Grid.ExpandGroupItem(this, rowArgs?.Item1.Expanded))">
-                <span class="@(Grid.ExpandedGroupItemStyle(this, Grid.allGroupsExpanded != null ? Grid.allGroupsExpanded : rowArgs?.Item1.Expanded))"></span>
-            </button>
+                @if (!Grid.AllowGroupExpand)
+                {
+                    <span class="@(Grid.ExpandedGroupItemStyle(this, Grid.allGroupsExpanded != null ? Grid.allGroupsExpanded : rowArgs?.Item1.Expanded))"></span>
+                }
+                else
+                {
+                    <button type="button" tabindex="-1" id="@(Grid.GridId() + Group.GetHashCode())"
+                            aria-label=@Grid.ExpandGroupAriaLabel
+                            aria-expanded="@(Grid.IsGroupItemExpanded(this).ToString().ToLowerInvariant())"
+                            disabled="@(!Grid.AllowGroupExpand)"
+                            class="rz-button rz-button-sm rz-button-icon-only rz-variant-text rz-base rz-shade-default"
+                            @onclick="@(_ => Grid.ExpandGroupItem(this, rowArgs?.Item1.Expanded))">
+                        <span class="@(Grid.ExpandedGroupItemStyle(this, Grid.allGroupsExpanded != null ? Grid.allGroupsExpanded : rowArgs?.Item1.Expanded))"></span>
+                    </button>
+                }
+            
             }
         </td>
     }
-    <td role="gridcell" style="@groupHeaderStyle" colspan="@(isFrozenGroupHeader ? FrozenColumnCount : TotalColumnCount + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
+    <td role="gridcell" style="@groupHeaderStyle"
+        colspan="@(isFrozenGroupHeader ? FrozenColumnCount : TotalColumnCount + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
         <span class="rz-cell-data">
             @if (Grid?.GroupHeaderTemplate != null)
             {
@@ -49,28 +60,29 @@
             {
                 @Grid.GroupHeaderToggleTemplate((Group, this))
             }
-            else if(Group.GroupDescriptor != null)
+            else if (Group.GroupDescriptor != null)
             {
                 @(Group.GroupDescriptor.GetTitle() + ": " + GetKeyAsString())
             }
         </span>
     </td>
-    @if(isFrozenGroupHeader)
+    @if (isFrozenGroupHeader)
     {
-        <td  colspan="@((TotalColumnCount - FrozenColumnCount) + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
-        <span class="rz-cell-data">
+        <td
+            colspan="@((TotalColumnCount - FrozenColumnCount) + (Grid?.Groups.Count ?? 0) - 1 - Group.Level + ((Grid?.Template != null && Grid?.ShowExpandColumn == true) ? 1 : 0))">
+            <span class="rz-cell-data">
            
-        </span>
-    </td>
+            </span>
+        </td>
     }
 </tr>
-@if(Grid != null && rowArgs != null)
+@if (Grid != null && rowArgs != null)
 {
     if (Grid.IsGroupItemExpanded(this) && rowArgs.Item1.Expanded != false && Grid.allGroupsExpanded != false)
     {
         @DrawDataRows()
     }
-    else if(Grid.GroupFootersAlwaysVisible)
+    else if (Grid.GroupFootersAlwaysVisible)
     {
         if (!Grid.collapsedGroupItems.Keys.Contains(this))
         {
@@ -113,7 +125,7 @@
         }
         set
         {
-            if(_groupResult != value)
+            if (_groupResult != value)
             {
                 _groupResult = value;
 
@@ -177,7 +189,8 @@
                     builder.CloseComponent();
                 }
 
-                if (Group?.GroupDescriptor?.ShowFooter.GetValueOrDefault() == true && Columns.Where(c => c.GroupFooterTemplate != null).Any() && Grid != null)
+                if (Group?.GroupDescriptor?.ShowFooter.GetValueOrDefault() == true && Columns.Where(c => c.GroupFooterTemplate !=
+null).Any() && Grid != null)
                 {
                     builder.OpenComponent(7, typeof(RadzenDataGridGroupFooterRow<TItem>));
                     builder.AddAttribute(8, "Columns", Columns);
@@ -217,7 +230,8 @@
                         }
                     }
 
-                    if (Group?.GroupDescriptor?.ShowFooter.GetValueOrDefault(true) == true && Columns.Where(c => c.GroupFooterTemplate != null).Any() && Grid != null)
+                    if (Group?.GroupDescriptor?.ShowFooter.GetValueOrDefault(true) == true && Columns.Where(c => c.GroupFooterTemplate !=
+null).Any() && Grid != null)
                     {
                         builder.OpenComponent(7, typeof(RadzenDataGridGroupFooterRow<TItem>));
                         builder.AddAttribute(8, "Columns", Columns);
@@ -228,7 +242,8 @@
                         builder.CloseComponent();
                     }
                 }
-                else if (Group?.GroupDescriptor?.ShowFooter.GetValueOrDefault(true) == true && Columns.Where(c => c.GroupFooterTemplate != null).Any() && Grid != null)
+                else if (Group?.GroupDescriptor?.ShowFooter.GetValueOrDefault(true) == true && Columns.Where(c => c.GroupFooterTemplate
+!= null).Any() && Grid != null)
                 {
                     builder.OpenComponent(7, typeof(RadzenDataGridGroupFooterRow<TItem>));
                     builder.AddAttribute(8, "Columns", Columns);
@@ -248,7 +263,7 @@
     {
         int i = 0;
         var p = Parent;
-        while(p != null)
+        while (p != null)
         {
             p = p.Parent;
             i++;
@@ -261,7 +276,7 @@
     {
         if (column.ColumnsCollection?.Count == 0)
         {
-            return column.GetVisible()  ? 1 : 0;
+            return column.GetVisible() ? 1 : 0;
         }
 
         int count = 0;

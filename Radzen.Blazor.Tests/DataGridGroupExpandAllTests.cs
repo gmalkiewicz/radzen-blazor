@@ -18,7 +18,8 @@ namespace Radzen.Blazor.Tests
 
         static IRenderedComponent<RadzenDataGrid<Item>> Render(TestContext ctx, bool showGroupExpandAll = true, bool grouped = true,
             bool showGroupExpandColumn = true, bool? allGroupsExpanded = null, EventCallback<bool?> allGroupsExpandedChanged = default,
-            string expandTitle = null, string collapseTitle = null, System.Action<GroupRowRenderEventArgs> groupRowRender = null)
+            string expandTitle = null, string collapseTitle = null, System.Action<GroupRowRenderEventArgs> groupRowRender = null,
+            bool allowGroupExpand = true, bool nestedGroups = false)
         {
             ctx.JSInterop.Mode = JSRuntimeMode.Loose;
             ctx.JSInterop.SetupModule("_content/Radzen.Blazor/Radzen.Blazor.js");
@@ -28,6 +29,10 @@ namespace Radzen.Blazor.Tests
             if (grouped)
             {
                 groups.Add(new GroupDescriptor { Property = nameof(Item.City) });
+                if (nestedGroups)
+                {
+                    groups.Add(new GroupDescriptor { Property = nameof(Item.Name) });
+                }
             }
 
             return ctx.RenderComponent<RadzenDataGrid<Item>>(pb =>
@@ -42,6 +47,7 @@ namespace Radzen.Blazor.Tests
                 pb.Add(p => p.Groups, groups);
                 pb.Add(p => p.ShowGroupExpandAll, showGroupExpandAll);
                 pb.Add(p => p.ShowGroupExpandColumn, showGroupExpandColumn);
+                pb.Add(p => p.AllowGroupExpand, allowGroupExpand);
                 pb.Add(p => p.AllGroupsExpanded, allGroupsExpanded);
                 pb.Add(p => p.AllGroupsExpandedChanged, allGroupsExpandedChanged);
 
@@ -74,6 +80,39 @@ namespace Radzen.Blazor.Tests
         }
 
         static int DataRowCount(IRenderedComponent<RadzenDataGrid<Item>> component) => component.FindAll("tr.rz-data-row").Count;
+
+        [Fact]
+        public void IndividualGroupToggles_CanBeDisabledAndReenabled_AtEveryLevel()
+        {
+            using var ctx = new TestContext();
+            var component = Render(ctx, allowGroupExpand: false, nestedGroups: true);
+
+            var buttons = component.FindAll(".rz-group-row button");
+            Assert.Equal(5, buttons.Count);
+            Assert.All(buttons, button => Assert.True(button.HasAttribute("disabled")));
+            Assert.Equal(3, DataRowCount(component));
+
+            component.SetParametersAndRender(parameters => parameters.Add(p => p.AllowGroupExpand, true));
+
+            Assert.All(component.FindAll(".rz-group-row button"), button => Assert.False(button.HasAttribute("disabled")));
+            component.FindAll(".rz-group-row button")[0].Click();
+            Assert.Equal(1, DataRowCount(component));
+        }
+
+        [Fact]
+        public void DisabledIndividualGroupToggles_DoNotBlockProgrammaticOrExpandAllToggling()
+        {
+            using var ctx = new TestContext();
+            var component = Render(ctx, allowGroupExpand: false);
+            var group = component.FindComponents<RadzenDataGridGroupRow<Item>>()[0].Instance;
+
+            component.InvokeAsync(() => component.Instance.ExpandGroupItem(group, null)).GetAwaiter().GetResult();
+            Assert.Equal(1, DataRowCount(component));
+
+            component.Find(Button).Click();
+            Assert.Equal(3, DataRowCount(component));
+            Assert.All(component.FindAll(".rz-group-row button"), button => Assert.True(button.HasAttribute("disabled")));
+        }
 
         [Fact]
         public void Button_IsNotRendered_ByDefault()

@@ -3589,6 +3589,14 @@ namespace Radzen.Blazor
         public bool ShowGroupExpandColumn { get; set; } = true;
 
         /// <summary>
+        /// Gets or sets whether individual groups can be expanded or collapsed using their toggle buttons.
+        /// This does not affect programmatic toggling or the expand all groups button.
+        /// </summary>
+        /// <value><c>true</c> to enable group toggle buttons; otherwise, <c>false</c>. The default is <c>true</c>.</value>
+        [Parameter]
+        public bool AllowGroupExpand { get; set; } = true;
+
+        /// <summary>
         /// Gets or sets a value indicating whether all groups can be expanded or collapsed at once from the header of the group expand column.
         /// The button is rendered only when the DataGrid is grouped and <see cref="ShowGroupExpandColumn"/> is <c>true</c>.
         /// </summary>
